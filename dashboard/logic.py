@@ -1,4 +1,5 @@
 import colorsys
+import hashlib
 import html
 import ipaddress
 import math
@@ -23,6 +24,25 @@ SCENARIOS = (
     "Zero perturbation (identity check)",
     "Custom localized shock",
 )
+
+
+def uploaded_dataset_key(file_name, contents):
+    return ("upload", file_name, hashlib.sha256(contents).hexdigest())
+
+
+def grid_cell_area_weights(latitudes):
+    lats = np.asarray(latitudes, dtype=np.float64)
+    if (
+        lats.shape != (GRID_HEIGHT,)
+        or not np.isfinite(lats).all()
+        or np.any(np.abs(lats) > 90.0)
+    ):
+        raise ValueError("Latitude coordinates must be finite and within [-90, 90].")
+    row_weights = np.cos(np.deg2rad(lats))
+    weights = np.broadcast_to(row_weights[:, None], (GRID_HEIGHT, GRID_WIDTH)).copy()
+    if not np.isfinite(weights).all() or float(weights.sum()) <= 0.0:
+        raise ValueError("Grid coordinates do not define positive cell areas.")
+    return weights
 
 
 def validate_api_url(raw_url):
@@ -138,11 +158,16 @@ def impact_summary(rollout, init_state, latitudes, longitudes):
         or previous.shape != (6, GRID_HEIGHT, GRID_WIDTH)
         or lats.shape != (GRID_HEIGHT,)
         or lons.shape != (GRID_WIDTH,)
+        or not np.isfinite(lats).all()
+        or not np.isfinite(lons).all()
+        or np.any(np.abs(lats) > 90.0)
     ):
         raise ValueError("Impact summary received an invalid rollout or grid shape.")
     if not np.isfinite(forecast).all() or not np.isfinite(previous).all():
         raise ValueError("Impact summary requires finite physical-unit weather fields.")
 
+    cell_weights = grid_cell_area_weights(lats)
+    total_area = float(cell_weights.sum())
     central = (
         (lats[:, None] >= 16.0)
         & (lats[:, None] <= 23.0)
@@ -151,15 +176,43 @@ def impact_summary(rollout, init_state, latitudes, longitudes):
     )
     land = lats[:, None] >= 8.0
     if not central.any():
-        central = land
+        central = np.broadcast_to(land, (GRID_HEIGHT, GRID_WIDTH))
+    if not central.any():
+        central = np.ones((GRID_HEIGHT, GRID_WIDTH), dtype=bool)
     rain = forecast[:, 1]
-    crop_mean = float(rain[:, central].mean())
-    crop_deficit_days = int(np.count_nonzero(rain[:, central].mean(axis=1) < 4.0))
-    flood_fraction = float(np.mean(rain >= 10.0))
+    central_weights = cell_weights[central]
+    regional_daily_rain = np.average(
+        rain[:, central], axis=1, weights=central_weights
+    )
+    crop_mean = float(regional_daily_rain.mean())
+    crop_deficit_days = int(np.count_nonzero(regional_daily_rain < 4.0))
+    flood_fraction = float(
+        np.mean(
+            np.sum((rain >= 10.0) * cell_weights[None, :, :], axis=(1, 2))
+            / total_area
+        )
+    )
     peak_rain = float(rain.max())
+    hot_area_day_fraction = float(
+        np.mean(
+            np.sum(
+                (forecast[:, 0] > 308.15) * cell_weights[None, :, :],
+                axis=(1, 2),
+            )
+            / total_area
+        )
+    )
     wind = np.hypot(forecast[:, 2], forecast[:, 3])
-    baseline_wind_power = float(np.mean(np.hypot(previous[2], previous[3]) ** 3))
-    forecast_wind_power = float(np.mean(wind**3))
+    baseline_wind_power = float(
+        np.sum(np.hypot(previous[2], previous[3]) ** 3 * cell_weights)
+        / total_area
+    )
+    forecast_wind_power = float(
+        np.mean(
+            np.sum(wind**3 * cell_weights[None, :, :], axis=(1, 2))
+            / total_area
+        )
+    )
     wind_index = (
         forecast_wind_power / baseline_wind_power
         if baseline_wind_power > 1e-8
@@ -169,6 +222,7 @@ def impact_summary(rollout, init_state, latitudes, longitudes):
         "crop_rain_mm_day": crop_mean,
         "crop_deficit_days": crop_deficit_days,
         "flood_exceedance_fraction": flood_fraction,
+        "hot_area_day_fraction": hot_area_day_fraction,
         "peak_rain_mm_day": peak_rain,
         "wind_power_index": wind_index,
         "wind_power_relative_pct": (
@@ -177,7 +231,33 @@ def impact_summary(rollout, init_state, latitudes, longitudes):
     }
 
 
-def grid_svg(values, latitudes, longitudes, title, *, diverging=False):
+def response_diagnostics(baseline, alternate, channel_index):
+    base = np.asarray(baseline, dtype=np.float64)
+    branch = np.asarray(alternate, dtype=np.float64)
+    if (
+        base.ndim != 4
+        or base.shape[0] < 1
+        or base.shape[1:] != (6, GRID_HEIGHT, GRID_WIDTH)
+        or branch.shape != base.shape
+        or isinstance(channel_index, bool)
+        or not isinstance(channel_index, (int, np.integer))
+        or not 0 <= channel_index < 6
+    ):
+        raise ValueError("Counterfactual response received an invalid rollout or channel.")
+    if not np.isfinite(base).all() or not np.isfinite(branch).all():
+        raise ValueError("Counterfactual response requires finite forecast fields.")
+    difference = branch[:, channel_index] - base[:, channel_index]
+    return (
+        difference,
+        difference.mean(axis=(1, 2)),
+        np.sqrt(np.mean(difference**2, axis=(1, 2))),
+        np.max(np.abs(difference), axis=(1, 2)),
+    )
+
+
+def grid_svg(
+    values, latitudes, longitudes, title, *, diverging=False, scale_limits=None
+):
     grid = np.asarray(values, dtype=np.float64)
     lats = np.asarray(latitudes, dtype=np.float64)
     lons = np.asarray(longitudes, dtype=np.float64)
@@ -188,10 +268,27 @@ def grid_svg(values, latitudes, longitudes, title, *, diverging=False):
     if not np.isfinite(grid).all():
         raise ValueError("Map layer contains NaN or Inf.")
 
-    if diverging:
+    if scale_limits is not None:
+        try:
+            low, high = (float(value) for value in scale_limits)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Map scale limits must contain two finite numbers.") from exc
+        if not math.isfinite(low) or not math.isfinite(high) or low > high:
+            raise ValueError("Map scale limits must be finite and ordered.")
+        if diverging:
+            scale = max(abs(low), abs(high), 1e-8)
+            normalized = np.clip(grid / scale, -1.0, 1.0)
+            legend_low, legend_high = -scale, scale
+        else:
+            if high - low < 1e-10:
+                high = low + 1.0
+            normalized = np.clip((grid - low) / (high - low), 0.0, 1.0)
+            legend_low, legend_high = low, high
+    elif diverging:
         scale = float(np.quantile(np.abs(grid), 0.98))
         scale = max(scale, 1e-8)
         normalized = np.clip(grid / scale, -1.0, 1.0)
+        legend_low, legend_high = -scale, scale
     else:
         low, high = (float(value) for value in np.quantile(grid, (0.02, 0.98)))
         if high - low < 1e-10:
@@ -199,13 +296,26 @@ def grid_svg(values, latitudes, longitudes, title, *, diverging=False):
         if high - low < 1e-10:
             high = low + 1.0
         normalized = np.clip((grid - low) / (high - low), 0.0, 1.0)
+        legend_low, legend_high = low, high
 
     cell = 18
     margin_left, margin_top = 54, 18
     map_width, map_height = GRID_WIDTH * cell, GRID_HEIGHT * cell
-    svg_width, svg_height = margin_left + map_width + 12, margin_top + map_height + 40
+    svg_width = margin_left + map_width + 12
+    svg_height = margin_top + map_height + 68
     labels = []
     cells = []
+
+    def color_for(value):
+        if diverging:
+            hue = 0.58 - 0.58 * ((value + 1.0) / 2.0)
+            lightness = 0.50 + 0.08 * (1.0 - abs(value))
+        else:
+            hue = 0.60 - 0.60 * value
+            lightness = 0.50 + 0.15 * (1.0 - value)
+        red, green, blue = colorsys.hls_to_rgb(hue, lightness, 0.72)
+        return f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
+
     for row in range(GRID_HEIGHT):
         source_row = GRID_HEIGHT - 1 - row
         if row % 8 == 0:
@@ -215,16 +325,7 @@ def grid_svg(values, latitudes, longitudes, title, *, diverging=False):
             )
         for col in range(GRID_WIDTH):
             value = float(normalized[source_row, col])
-            if diverging:
-                hue = 0.58 - 0.58 * ((value + 1.0) / 2.0)
-                saturation = 0.72
-                lightness = 0.50 + 0.08 * (1.0 - abs(value))
-            else:
-                hue = 0.60 - 0.60 * value
-                saturation = 0.72
-                lightness = 0.50 + 0.15 * (1.0 - value)
-            red, green, blue = colorsys.hls_to_rgb(hue, lightness, saturation)
-            color = f"#{round(red * 255):02x}{round(green * 255):02x}{round(blue * 255):02x}"
+            color = color_for(value)
             x, y = margin_left + col * cell, margin_top + row * cell
             cells.append(
                 f'<rect x="{x}" y="{y}" width="{cell}" height="{cell}" '
@@ -237,6 +338,31 @@ def grid_svg(values, latitudes, longitudes, title, *, diverging=False):
             f'<text x="{margin_left + col * cell}" y="{margin_top + map_height + 16}" '
             f'font-size="11" fill="#334155">{html.escape(f"{lons[col]:.1f}°E")}</text>'
         )
+    legend_x = svg_width - 194
+    legend_y = margin_top + map_height + 28
+    legend_width = 180
+    segments = 36
+    for index in range(segments):
+        position = index / (segments - 1)
+        color_value = 2.0 * position - 1.0 if diverging else position
+        labels.append(
+            f'<rect x="{legend_x + index * legend_width / segments:.2f}" '
+            f'y="{legend_y}" width="{legend_width / segments + 0.2:.2f}" '
+            f'height="8" fill="{color_for(color_value)}"/>'
+        )
+    labels.append(
+        f'<text x="{legend_x}" y="{legend_y + 22}" font-size="10" fill="#334155">'
+        f'{legend_low:.3g}</text>'
+    )
+    if diverging:
+        labels.append(
+            f'<text x="{legend_x + legend_width / 2}" y="{legend_y + 22}" '
+            f'text-anchor="middle" font-size="10" fill="#334155">0</text>'
+        )
+    labels.append(
+        f'<text x="{legend_x + legend_width}" y="{legend_y + 22}" '
+        f'text-anchor="end" font-size="10" fill="#334155">{legend_high:.3g}</text>'
+    )
     safe_title = html.escape(str(title))
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="{safe_title}" '

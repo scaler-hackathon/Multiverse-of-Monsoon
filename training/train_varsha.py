@@ -7,47 +7,61 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import xarray as xr
-from data_utils import resolve_dataset_path
+
+if __package__:
+    from .data_utils import resolve_dataset_path
+else:
+    from data_utils import resolve_dataset_path
 
 ROOT = Path(__file__).resolve().parents[1]
 HEIGHT, WIDTH = 32, 36
+SIGNED_RAIN_MODE = "signed_increment"
 
 
 class ResBlock(nn.Module):
     def __init__(self, channels):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            nn.GroupNorm(4, channels),
+        self.net = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, channels),
             nn.GELU(),
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            nn.GroupNorm(4, channels),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, channels),
         )
         self.act = nn.GELU()
 
     def forward(self, x):
-        return self.act(x + self.conv(x))
+        return self.act(x + self.net(x))
 
 
 class VarshaNet(nn.Module):
-    def __init__(self, in_channels=22, out_channels=6, base_dim=48):
+    def __init__(
+        self,
+        in_channels=22,
+        out_channels=6,
+        base_dim=64,
+        rain_mode=SIGNED_RAIN_MODE,
+    ):
         super().__init__()
+        self.rain_mode = rain_mode
         self.in_proj = nn.Sequential(
-            nn.Conv2d(in_channels, base_dim, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels, base_dim, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, base_dim),
             nn.GELU(),
         )
-        self.blocks = nn.Sequential(
-            ResBlock(base_dim),
-            ResBlock(base_dim),
-            ResBlock(base_dim),
-            ResBlock(base_dim),
-        )
-        self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=3, padding=1)
+        self.blocks = nn.Sequential(*[ResBlock(base_dim) for _ in range(6)])
+        self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=1)
+        self.rain_scale = nn.Parameter(torch.ones(1))
 
     def forward(self, x):
-        return self.out_proj(self.blocks(self.in_proj(x)))
+        delta = self.out_proj(self.blocks(self.in_proj(x)))
+        rain = delta[:, 1:2] * self.rain_scale
+        if self.rain_mode == "softplus_increment":
+            rain = F.softplus(rain)
+        return torch.cat((delta[:, :1], rain, delta[:, 2:]), dim=1)
 
 
 def _forecast_doy(last_input_doy, lead):
@@ -174,10 +188,21 @@ def main():
     if args.from_scratch:
         print("Training from a fresh initialization")
     elif args.initial_weights.exists():
-        model.load_state_dict(
-            torch.load(args.initial_weights, map_location="cpu", weights_only=True)
+        checkpoint = torch.load(
+            args.initial_weights, map_location="cpu", weights_only=True
         )
-        print(f"Fine-tuning from {args.initial_weights}")
+        state_dict = (
+            checkpoint["state_dict"]
+            if isinstance(checkpoint, dict) and "state_dict" in checkpoint
+            else checkpoint
+        )
+        model.load_state_dict(
+            state_dict
+        )
+        print(
+            f"Fine-tuning weights from {args.initial_weights} "
+            "with signed rainfall increments"
+        )
     else:
         raise FileNotFoundError(
             f"Missing initial checkpoint {args.initial_weights}; pass --from-scratch to start fresh."
@@ -217,7 +242,20 @@ def main():
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = args.output.with_name(args.output.name + ".tmp")
-    torch.save(model.state_dict(), temporary_path)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "rain_mode": SIGNED_RAIN_MODE,
+            "training_years": (
+                f"{np.datetime_as_string(times[0], unit='Y')}-"
+                f"{np.datetime_as_string(times[val_start - 1], unit='Y')}"
+            ),
+            "validation_year": str(
+                np.datetime_as_string(times[val_start], unit="Y")
+            ),
+        },
+        temporary_path,
+    )
     os.replace(temporary_path, args.output)
 
     print(f"Candidate weights saved to {args.output}")

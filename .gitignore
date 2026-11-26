@@ -27,7 +27,6 @@ SHA256SUMS.txt
 *.json.tmp
 
 # Streamlit and local validation caches
-.streamlit/
 dashboard/.streamlit/
 
 # OS / Editor Artifacts

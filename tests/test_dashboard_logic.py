@@ -1,12 +1,16 @@
 import unittest
+import re
 
 import numpy as np
 
 from dashboard.logic import (
     SCENARIOS,
+    grid_cell_area_weights,
     grid_svg,
     impact_summary,
     make_perturbation,
+    response_diagnostics,
+    uploaded_dataset_key,
     validate_api_url,
 )
 
@@ -100,6 +104,98 @@ class DashboardLogicTests(unittest.TestCase):
         self.assertIn("Test precipitation", svg)
         with self.assertRaises(ValueError):
             grid_svg(np.full((32, 36), np.nan), self.latitudes, self.longitudes, "bad")
+
+    def test_uploaded_dataset_key_detects_replacement_with_same_name_and_size(self):
+        first = uploaded_dataset_key("climate.nc", b"first")
+        replacement = uploaded_dataset_key("climate.nc", b"other")
+        self.assertNotEqual(first, replacement)
+        self.assertEqual(first, uploaded_dataset_key("climate.nc", b"first"))
+
+    def test_impact_coverage_and_regional_means_are_area_weighted(self):
+        rollout = np.repeat(self.states[-1][None], 2, axis=0)
+        row_values = np.arange(32, dtype=np.float32)
+        rollout[:, 0] = (300.0 + row_values)[None, :, None]
+        rollout[:, 1] = row_values[None, :, None]
+        weights = grid_cell_area_weights(self.latitudes)
+        central = (
+            (self.latitudes[:, None] >= 16.0)
+            & (self.latitudes[:, None] <= 23.0)
+            & (self.longitudes[None, :] >= 73.0)
+            & (self.longitudes[None, :] <= 82.0)
+        )
+
+        impacts = impact_summary(
+            rollout, self.states[-1], self.latitudes, self.longitudes
+        )
+        expected_central_rain = np.average(
+            rollout[0, 1, central], weights=weights[central]
+        )
+        expected_heavy_rain_area = weights[row_values >= 10].sum() / weights.sum()
+        expected_hot_area = weights[row_values + 300.0 > 308.15].sum() / weights.sum()
+        self.assertAlmostEqual(
+            impacts["crop_rain_mm_day"], float(expected_central_rain), places=6
+        )
+        self.assertAlmostEqual(
+            impacts["flood_exceedance_fraction"],
+            float(expected_heavy_rain_area),
+            places=6,
+        )
+        self.assertAlmostEqual(
+            impacts["hot_area_day_fraction"], float(expected_hot_area), places=6
+        )
+
+    def test_shared_map_limits_preserve_colors_and_reject_invalid_bounds(self):
+        first = np.zeros((32, 36), dtype=np.float32)
+        second = np.zeros((32, 36), dtype=np.float32)
+        first[-1, 0] = second[-1, 0] = 2.0
+        second[-1, 1] = 9.0
+        first_svg = grid_svg(
+            first,
+            self.latitudes,
+            self.longitudes,
+            "Baseline",
+            scale_limits=(0.0, 10.0),
+        )
+        second_svg = grid_svg(
+            second,
+            self.latitudes,
+            self.longitudes,
+            "Alternate",
+            scale_limits=(0.0, 10.0),
+        )
+        first_color = re.search(
+            r'<rect x="54" y="18"[^>]*fill="(#[0-9a-f]{6})"', first_svg
+        ).group(1)
+        second_color = re.search(
+            r'<rect x="54" y="18"[^>]*fill="(#[0-9a-f]{6})"', second_svg
+        ).group(1)
+        self.assertEqual(first_color, second_color)
+        self.assertIn("10", first_svg)
+        with self.assertRaises(ValueError):
+            grid_svg(
+                first,
+                self.latitudes,
+                self.longitudes,
+                "Invalid scale",
+                scale_limits=(10.0, 0.0),
+            )
+
+    def test_spatial_response_magnitude_does_not_cancel_signed_cells(self):
+        baseline = np.zeros((2, 6, 32, 36), dtype=np.float32)
+        alternate = baseline.copy()
+        alternate[0, 0, 0, 0] = 2.0
+        alternate[0, 0, 0, 1] = -2.0
+
+        difference, mean, rms, peak = response_diagnostics(
+            baseline, alternate, 0
+        )
+        self.assertAlmostEqual(float(mean[0]), 0.0, places=7)
+        self.assertGreater(float(rms[0]), 0.0)
+        self.assertAlmostEqual(float(peak[0]), 2.0)
+        self.assertEqual(float(rms[1]), 0.0)
+        self.assertEqual(int(np.count_nonzero(difference[1])), 0)
+        with self.assertRaises(ValueError):
+            response_diagnostics(baseline, alternate, 6)
 
 
 if __name__ == "__main__":

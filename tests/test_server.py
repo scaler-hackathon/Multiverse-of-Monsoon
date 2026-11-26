@@ -1,8 +1,13 @@
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
+import torch
 
 import serve
+from training.train_varsha import VarshaNet
 
 
 class InferenceEdgeCaseTests(unittest.TestCase):
@@ -39,6 +44,53 @@ class InferenceEdgeCaseTests(unittest.TestCase):
         for invalid_call in cases:
             with self.subTest(call=invalid_call), self.assertRaises(ValueError):
                 invalid_call()
+
+    def test_training_model_matches_deployed_checkpoint_and_forward(self):
+        training_model = VarshaNet(rain_mode=serve.model.rain_mode).eval()
+        serve.load_model_weights(training_model, serve.weights_path)
+        sample = torch.zeros((1, 22, 32, 36), dtype=torch.float32)
+        with torch.no_grad():
+            training_output = training_model(sample).numpy()
+            inference_output = serve.model(sample).numpy()
+        np.testing.assert_array_equal(training_output, inference_output)
+
+    def test_signed_rain_head_can_predict_a_decrease(self):
+        model = serve.VarshaNet(rain_mode=serve.SIGNED_RAIN_MODE)
+        for parameter in model.parameters():
+            torch.nn.init.zeros_(parameter)
+        with torch.no_grad():
+            model.rain_scale.fill_(1.0)
+            model.out_proj.bias[1] = -1.0
+        output = model(torch.zeros((1, 22, 32, 36)))
+        self.assertTrue(torch.all(output[:, 1] < 0))
+
+    def test_new_checkpoint_metadata_selects_signed_rain_mode(self):
+        source = VarshaNet(rain_mode=serve.SIGNED_RAIN_MODE)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "candidate.pt"
+            torch.save(
+                {
+                    "state_dict": source.state_dict(),
+                    "rain_mode": serve.SIGNED_RAIN_MODE,
+                    "training_years": [2005, 2018],
+                },
+                path,
+            )
+            target = VarshaNet()
+            metadata = serve.load_model_weights(target, path)
+        self.assertEqual(target.rain_mode, serve.SIGNED_RAIN_MODE)
+        self.assertEqual(metadata["training_years"], [2005, 2018])
+
+    def test_signed_rain_forecast_can_fall_without_becoming_negative(self):
+        initial = np.zeros((3, 6, 32, 36), dtype=np.float32)
+        initial[:, 0] = 290.0
+        initial[:, 1] = 20.0
+        negative_rain_delta = torch.zeros((1, 6, 32, 36))
+        negative_rain_delta[:, 1] = -1.0
+        with patch.object(serve.model, "forward", return_value=negative_rain_delta):
+            forecast = serve.simulate(initial, self.phase, 1, None)
+        self.assertTrue(np.all(forecast[:, 1] < initial[-1, 1]))
+        self.assertGreaterEqual(float(forecast[:, 1].min()), 0.0)
 
 
 if __name__ == "__main__":

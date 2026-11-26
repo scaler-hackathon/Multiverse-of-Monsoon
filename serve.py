@@ -5,51 +5,90 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 
 app = FastAPI()
-MODEL_NAME = "VARSHA-v1-ResNet"
+LEGACY_RAIN_MODE = "softplus_increment"
+SIGNED_RAIN_MODE = "signed_increment"
 
 ROOT = Path(__file__).resolve().parent
 torch.set_num_threads(min(4, torch.get_num_threads()))
 
-# --- 1. Model Architecture ---
+# --- 1. Model Architecture (Exact Match to Trained Colab Checkpoint) ---
 class ResBlock(nn.Module):
-    def __init__(self, channels):
+    def __init__(self, ch):
         super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            nn.GroupNorm(4, channels),
+        self.net = nn.Sequential(
+            nn.Conv2d(ch, ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, ch),
             nn.GELU(),
-            nn.Conv2d(channels, channels, kernel_size=3, padding=1),
-            nn.GroupNorm(4, channels),
+            nn.Conv2d(ch, ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, ch),
         )
         self.act = nn.GELU()
 
     def forward(self, x):
-        return self.act(x + self.conv(x))
+        return self.act(x + self.net(x))
 
 
 class VarshaNet(nn.Module):
-    def __init__(self, in_channels=22, out_channels=6, base_dim=48):
+    def __init__(
+        self,
+        in_channels=22,
+        out_channels=6,
+        base_dim=64,
+        rain_mode=LEGACY_RAIN_MODE,
+    ):
         super().__init__()
+        if rain_mode not in (LEGACY_RAIN_MODE, SIGNED_RAIN_MODE):
+            raise ValueError(f"Unsupported rain increment mode: {rain_mode}")
+        self.rain_mode = rain_mode
         self.in_proj = nn.Sequential(
-            nn.Conv2d(in_channels, base_dim, kernel_size=3, padding=1),
-            nn.GELU()
+            nn.Conv2d(in_channels, base_dim, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(8, base_dim),
+            nn.GELU(),
         )
-        self.blocks = nn.Sequential(
-            ResBlock(base_dim),
-            ResBlock(base_dim),
-            ResBlock(base_dim),
-            ResBlock(base_dim)
-        )
-        self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=3, padding=1)
+        self.blocks = nn.Sequential(*[ResBlock(base_dim) for _ in range(6)])
+        self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=1)  # 1x1 pointwise conv
+        self.rain_scale = nn.Parameter(torch.ones(1))
 
     def forward(self, x):
         feat = self.in_proj(x)
         feat = self.blocks(feat)
-        return self.out_proj(feat)
+        delta = self.out_proj(feat)
+        rain = delta[:, 1:2] * self.rain_scale
+        if self.rain_mode == LEGACY_RAIN_MODE:
+            rain = F.softplus(rain)
+        return torch.cat([delta[:, :1], rain, delta[:, 2:]], dim=1)
+
+
+def load_model_weights(target_model, path):
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    if isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+        rain_mode = checkpoint.get("rain_mode")
+        if not isinstance(rain_mode, str):
+            raise ValueError("Checkpoint metadata must declare a rain_mode.")
+        metadata = {
+            key: value
+            for key, value in checkpoint.items()
+            if key not in ("state_dict", "rain_mode")
+        }
+    else:
+        state_dict = checkpoint
+        rain_mode = LEGACY_RAIN_MODE
+        metadata = {"checkpoint_format": "legacy"}
+
+    if rain_mode not in (LEGACY_RAIN_MODE, SIGNED_RAIN_MODE):
+        raise ValueError(f"Unsupported checkpoint rain_mode: {rain_mode}")
+    if not isinstance(state_dict, dict):
+        raise ValueError("Checkpoint must contain a model state dictionary.")
+    target_model.rain_mode = rain_mode
+    target_model.load_state_dict(state_dict)
+    metadata["rain_mode"] = rain_mode
+    return metadata
 
 
 # --- 2. Load Weights and Static Assets ---
@@ -63,9 +102,14 @@ NORM_STATIC = np.load(ROOT / "static_norm.npy").astype(np.float32)
 TEMP_MIN = float(np.nextafter(np.float32(233.15), np.float32(np.inf)))
 TEMP_MAX = float(np.float32(333.15))
 
-model = VarshaNet()
+model = VarshaNet(in_channels=22, out_channels=6, base_dim=64)
 weights_path = ROOT / "varsha_weights.pt"
-model.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
+checkpoint_metadata = load_model_weights(model, weights_path)
+MODEL_NAME = (
+    "VARSHA-v2-ResNet64"
+    if model.rain_mode == LEGACY_RAIN_MODE
+    else "VARSHA-v3-ResNet64"
+)
 model.eval()
 
 

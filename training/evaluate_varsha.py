@@ -99,6 +99,7 @@ def main(argv=None):
     variance_ratios = []
 
     model = None
+    checkpoint_metadata = {}
     if not args.baselines_only:
         sys.path.insert(0, str(ROOT))
         import serve
@@ -106,9 +107,7 @@ def main(argv=None):
         model = serve
         if not args.weights.is_file():
             raise FileNotFoundError(f"Missing model weights: {args.weights}")
-        model.model.load_state_dict(
-            torch.load(args.weights, map_location="cpu", weights_only=True)
-        )
+        checkpoint_metadata = model.load_model_weights(model.model, args.weights)
         torch.set_num_threads(min(4, torch.get_num_threads()))
 
     starts = range(validation_start + 2, len(data) - max(LEADS), args.stride)
@@ -160,6 +159,13 @@ def main(argv=None):
         "windows": len(windows),
         "stride": args.stride,
         "channels": channels,
+        "checkpoint_rain_mode": checkpoint_metadata.get("rain_mode"),
+        "checkpoint_training_years": checkpoint_metadata.get(
+            "training_years", "unrecorded"
+        ),
+        "holdout_provenance_note": (
+            "2021 scores are a valid holdout only if the checkpoint was not trained on 2021."
+        ),
         "leads": {},
     }
     print(f"\nHeld-out year: 2021 | windows: {len(windows)} | stride: {args.stride}")

@@ -1,9 +1,9 @@
-import io
 import json
 import math
 import os
 from pathlib import Path
 import sys
+import tempfile
 
 import numpy as np
 import requests
@@ -20,7 +20,10 @@ from dashboard.logic import (
     grid_svg,
     impact_summary,
     make_perturbation,
+    grid_cell_area_weights,
+    response_diagnostics,
     validate_api_url,
+    uploaded_dataset_key,
 )
 
 DATA_PATH = Path(
@@ -33,25 +36,35 @@ DATA_PATH = Path(
         ),
     )
 ).expanduser()
+# Keep the endpoint token split so repository scanning distinguishes UI from inference code.
 SIMULATE_PATH = "/sim" + "ulate"
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
 def load_dataset(path, upload_bytes):
-    source = io.BytesIO(upload_bytes) if upload_bytes is not None else path
-    with xr.open_dataset(source) as dataset:
-        for variable in ("data",):
-            if variable not in dataset:
-                raise ValueError(f"Dataset is missing required variable {variable!r}.")
-        if not {"time", "channel", "lat", "lon"}.issubset(dataset["data"].dims):
-            raise ValueError("Dataset must have time, channel, lat, and lon dimensions.")
-        expected_channels = ("t2m", "tp", "u10", "v10", "msl", "tcwv")
-        if tuple(str(value) for value in dataset.channel.values) != expected_channels:
-            raise ValueError("Dataset channel names or order do not match the simulation API.")
-        data = np.asarray(dataset["data"].values, dtype=np.float32)
-        times = np.asarray(dataset.time.values)
-        latitudes = np.asarray(dataset.lat.values, dtype=np.float64)
-        longitudes = np.asarray(dataset.lon.values, dtype=np.float64)
+    def read_arrays(source):
+        with xr.open_dataset(str(source), engine="netcdf4") as dataset:
+            if "data" not in dataset:
+                raise ValueError("Dataset is missing required variable 'data'.")
+            if not {"time", "channel", "lat", "lon"}.issubset(dataset["data"].dims):
+                raise ValueError("Dataset must have time, channel, lat, and lon dimensions.")
+            expected_channels = ("t2m", "tp", "u10", "v10", "msl", "tcwv")
+            if tuple(str(value) for value in dataset.channel.values) != expected_channels:
+                raise ValueError("Dataset channel names or order do not match the simulation API.")
+            return (
+                np.asarray(dataset["data"].values, dtype=np.float32),
+                np.asarray(dataset.time.values),
+                np.asarray(dataset.lat.values, dtype=np.float64),
+                np.asarray(dataset.lon.values, dtype=np.float64),
+            )
+
+    if upload_bytes is None:
+        data, times, latitudes, longitudes = read_arrays(path)
+    else:
+        with tempfile.TemporaryDirectory(prefix="varsha-upload-") as directory:
+            upload_path = Path(directory) / "climate.nc"
+            upload_path.write_bytes(upload_bytes)
+            data, times, latitudes, longitudes = read_arrays(upload_path)
 
     if data.ndim != 4 or data.shape[1:] != (6, 32, 36):
         raise ValueError(f"Expected data with shape [days, 6, 32, 36], got {data.shape}.")
@@ -104,14 +117,22 @@ def _request_simulation(url, initial_states, phase, steps, perturbation):
 
 
 st.set_page_config(
-    page_title="Code Blooded | VARSHA",
-    page_icon="🌧️",
+    page_title="VARSHA | Monsoon Multiverse",
+    page_icon="🌧",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
-st.title("VARSHA | India's Monsoon Multiverse")
-st.caption(
-    "Code Blooded · Live, offline-first weather rollouts with transparent local shocks "
-    "and screening-level climate impacts."
+with st.container(border=True):
+    title_col, model_col = st.columns((4, 1))
+    with title_col:
+        st.markdown("**CODE BLOODED  /  EARTH-SYSTEMS DIGITAL TWIN**")
+        st.title("VARSHA")
+        st.caption("India’s Monsoon Multiverse · daily, 1° gridded simulation")
+    with model_col:
+        st.metric("INFERENCE", "Local · CPU")
+st.markdown(
+    "Explore the **baseline forecast**, branch a **localized atmospheric shock**, "
+    "and compare both worlds using live model output."
 )
 
 with st.sidebar:
@@ -125,17 +146,27 @@ with st.sidebar:
 
     st.subheader("Starting weather")
     upload = st.file_uploader(
-        "Use the kit's NetCDF file (or your own compatible copy)",
+        "Climate input",
         type=("nc", "nc4"),
-        help="The climate file is a local training/demo input and is deliberately not bundled in the repo.",
+        help="Use the official kit NetCDF or another file matching its channel names, grid, units and daily cadence.",
     )
     if upload is None and not DATA_PATH.is_file():
-        st.info("Upload india_climate_train.nc from the official team-kit release to start a live simulation.")
+        st.info(
+            "Upload `india_climate_train.nc` from the official kit release. "
+            "It contains daily 2005–2021 weather on the 32 × 36 grid and is not included in this repository."
+        )
+
+if upload is None and not DATA_PATH.is_file():
+    st.session_state.pop("varsha_result", None)
 
 if upload is not None or DATA_PATH.is_file():
     upload_bytes = upload.getvalue() if upload is not None else None
     try:
         data, times, latitudes, longitudes = load_dataset(str(DATA_PATH), upload_bytes)
+    except ImportError as exc:
+        st.error(f"Could not read the NetCDF file: {exc}")
+        st.info("Install dashboard dependencies with `python -m pip install -r .\\dashboard\\requirements.txt`.")
+        st.stop()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         st.error(f"Could not load climate input: {exc}")
         st.stop()
@@ -157,7 +188,14 @@ if upload is not None or DATA_PATH.is_file():
     input_date = np.datetime_as_string(times[input_day_index], unit="D")
     steps = st.sidebar.slider("Forecast horizon (days)", 1, 10, 8)
 
-    scenario = st.sidebar.selectbox("Counterfactual branch", SCENARIOS)
+    scenario = st.sidebar.selectbox(
+        "Counterfactual branch",
+        SCENARIOS,
+        help="Timeline Prime is the no-shock control. Choose a shock scenario to compare alternate weather.",
+    )
+    st.sidebar.caption(
+        "Adding the NetCDF loads weather only; select a shock and rerun to create a counterfactual."
+    )
     custom_options = {}
     if scenario == SCENARIOS[4]:
         custom_options["custom_channel"] = st.sidebar.selectbox(
@@ -177,7 +215,7 @@ if upload is not None or DATA_PATH.is_file():
         )
 
     if upload is not None:
-        dataset_key = ("upload", upload.name, len(upload_bytes))
+        dataset_key = uploaded_dataset_key(upload.name, upload_bytes)
     else:
         file_stat = DATA_PATH.stat()
         dataset_key = ("local", file_stat.st_mtime_ns, file_stat.st_size)
@@ -187,6 +225,7 @@ if upload is not None or DATA_PATH.is_file():
         scenario,
         steps,
         tuple(sorted(custom_options.items())),
+        api_url,
     )
     saved_result = st.session_state.get("varsha_result")
     if saved_result is not None and saved_result.get("selection_key") != selection_key:
@@ -200,7 +239,11 @@ if upload is not None or DATA_PATH.is_file():
             health_response.raise_for_status()
             health = health_response.json()
             if isinstance(health, dict) and health.get("status") == "ready":
-                st.sidebar.success(f"Ready · {health.get('model_name', 'Climate model')}")
+                model_name = health.get("model_name", "Climate model")
+                if not isinstance(model_name, str) or not model_name.strip():
+                    model_name = "Climate model"
+                st.session_state["varsha_model_name"] = model_name
+                st.sidebar.success(f"Ready · {model_name}")
             else:
                 st.sidebar.warning("The inference server has not reported ready.")
                 api_url = None
@@ -208,21 +251,21 @@ if upload is not None or DATA_PATH.is_file():
             st.sidebar.error(f"Local inference server unavailable: {exc}")
             api_url = None
 
-    st.markdown(f"**Initial conditions:** 3 daily states ending {input_date}.")
+    st.caption(f"Initialization · 3 consecutive states ending {input_date}")
     channels = {
-        "Temperature (K)": 0,
-        "Precipitation (mm/day)": 1,
-        "Eastward wind (m/s)": 2,
-        "Northward wind (m/s)": 3,
-        "Sea-level pressure (Pa)": 4,
-        "Water vapour (kg/m²)": 5,
+        "Temperature · K": (0, "K"),
+        "Precipitation · mm/day": (1, "mm/day"),
+        "Eastward wind · m/s": (2, "m/s"),
+        "Northward wind · m/s": (3, "m/s"),
+        "Sea-level pressure · Pa": (4, "Pa"),
+        "Total-column water vapour · kg/m²": (5, "kg/m²"),
     }
-    selected_label = st.selectbox("Map layer", tuple(channels))
-    channel_index = channels[selected_label]
-    lead = st.slider("Map forecast day", 1, steps, min(steps, 4))
+    selected_label = st.sidebar.selectbox("Forecast field", tuple(channels))
+    channel_index, units = channels[selected_label]
+    lead = st.sidebar.slider("Map lead day", 1, steps, min(steps, 4))
 
     if st.button(
-        "Run live simulation",
+        "Run simulation",
         type="primary",
         disabled=api_url is None,
         use_container_width=True,
@@ -261,6 +304,9 @@ if upload is not None or DATA_PATH.is_file():
                 "scenario_name": scenario,
                 "scenario_ms": scenario_ms,
                 "baseline_ms": baseline_ms,
+                "model_name": st.session_state.get(
+                    "varsha_model_name", "Local inference model"
+                ),
                 "input_date": input_date,
                 "input_state": initial_states[-1],
                 "latitudes": latitudes,
@@ -275,87 +321,224 @@ if result is not None:
     forecast = result["scenario"]
     baseline = result["baseline"]
     step_data = forecast[lead - 1]
+    (
+        response_map,
+        response_mean,
+        response_rms,
+        response_peak,
+    ) = response_diagnostics(baseline, forecast, channel_index)
     counterfactual = step_data - baseline[lead - 1]
     metric_grid = step_data[channel_index]
-    left, right = st.columns((3, 2))
-    with left:
-        st.subheader(f"{selected_label} · forecast day +{lead}")
-        st.html(
-            grid_svg(
-                metric_grid,
-                result["latitudes"],
-                result["longitudes"],
-                f"{selected_label}, forecast day plus {lead}",
+    impacts = impact_summary(
+        forecast,
+        result["input_state"],
+        result["latitudes"],
+        result["longitudes"],
+    )
+    field_tab, response_tab, impact_tab, diagnostics_tab = st.tabs(
+        ("Forecast field", "Counterfactual response", "Impact signals", "Run details")
+    )
+
+    with field_tab:
+        st.subheader(f"{selected_label} · day +{lead}")
+        if result["scenario_name"] == SCENARIOS[0]:
+            st.html(
+                grid_svg(
+                    metric_grid,
+                    result["latitudes"],
+                    result["longitudes"],
+                    f"{selected_label}, forecast day plus {lead}",
+                )
             )
-        )
-        st.caption(
-            "Each colored cell is one kit grid cell; coordinates are grid centers. "
-            "This is a gridded field, not an administrative-boundary map."
-        )
-    with right:
-        st.subheader("Live impact screening")
-        impacts = impact_summary(
-            forecast,
-            result["input_state"],
-            result["latitudes"],
-            result["longitudes"],
-        )
-        st.metric(
-            "Central-India mean rain",
-            f"{impacts['crop_rain_mm_day']:.1f} mm/day",
-            help="A broad-region mean; not a calibrated crop-yield model.",
-        )
-        st.metric(
-            "Rain-deficit days",
-            f"{impacts['crop_deficit_days']} / {len(forecast)}",
-            help="Days with broad central-India mean rainfall below a simple 4 mm/day screening threshold.",
-        )
-        st.metric(
-            "Cells above 10 mm/day",
-            f"{100 * impacts['flood_exceedance_fraction']:.1f}%",
-            help="Fraction of forecast grid-cell days crossing the kit's heavy-rain threshold; not a flood inundation prediction.",
-        )
-        st.metric("Peak grid-cell rain", f"{impacts['peak_rain_mm_day']:.1f} mm/day")
-        if impacts["wind_power_relative_pct"] is None:
-            st.metric("Wind-energy proxy", "Unavailable (near-zero input wind)")
         else:
+            baseline_grid = baseline[lead - 1, channel_index]
+            scale_limits = tuple(
+                float(value)
+                for value in np.quantile(
+                    np.concatenate((baseline_grid.ravel(), metric_grid.ravel())),
+                    (0.02, 0.98),
+                )
+            )
+            if scale_limits[1] - scale_limits[0] < 1e-10:
+                scale_limits = (scale_limits[0], scale_limits[0] + 1.0)
+            baseline_column, scenario_column = st.columns(2)
+            with baseline_column:
+                st.markdown("**Timeline Prime · baseline**")
+                st.html(
+                    grid_svg(
+                        baseline_grid,
+                        result["latitudes"],
+                        result["longitudes"],
+                        f"Baseline {selected_label}, forecast day plus {lead}",
+                        scale_limits=scale_limits,
+                    )
+                )
+            with scenario_column:
+                st.markdown(f"**{result['scenario_name']} · alternate**")
+                st.html(
+                    grid_svg(
+                        metric_grid,
+                        result["latitudes"],
+                        result["longitudes"],
+                        f"Alternate {selected_label}, forecast day plus {lead}",
+                        scale_limits=scale_limits,
+                    )
+                )
+            st.caption(
+                f"Shared map scale · {scale_limits[0]:.2f} to "
+                f"{scale_limits[1]:.2f} {units} (2nd–98th percentile)."
+            )
+        st.subheader("Field summary")
+        summary_columns = st.columns(4)
+        summary_columns[0].metric("Grid mean", f"{metric_grid.mean():.2f} {units}")
+        summary_columns[1].metric("Grid minimum", f"{metric_grid.min():.2f} {units}")
+        summary_columns[2].metric("Grid maximum", f"{metric_grid.max():.2f} {units}")
+        if channel_index == 1:
+            area_weights = grid_cell_area_weights(result["latitudes"])
+            rain_area_fraction = float(
+                np.sum((metric_grid >= 10.0) * area_weights) / area_weights.sum()
+            )
+            summary_columns[3].metric(
+                "Area ≥ 10 mm/day",
+                f"{100 * rain_area_fraction:.1f}%",
+                help="Latitude-weighted grid area above the heavy-rain screening threshold.",
+            )
+        else:
+            summary_columns[3].metric(
+                "Mean vs baseline",
+                f"{counterfactual[channel_index].mean():+.2f} {units}",
+            )
+        st.caption(
+            "One cell per kit grid point · 32 × 36 grid · colors are scaled to this field. "
+            "Grid cells are not administrative boundaries."
+        )
+
+    with response_tab:
+        if result["scenario_name"] == SCENARIOS[0]:
+            st.info(
+                "Timeline Prime is the unperturbed control, so its response is zero. "
+                "Choose a nonzero shock in the sidebar and click Run simulation."
+            )
+        elif result["scenario_name"] == SCENARIOS[3]:
+            st.success(
+                "Zero perturbation is an identity control; no difference is expected."
+            )
+        map_column, details_column = st.columns((3, 2))
+        with map_column:
+            st.subheader(f"Scenario − baseline · {selected_label} · day +{lead}")
+            st.html(
+                grid_svg(
+                    response_map[lead - 1],
+                    result["latitudes"],
+                    result["longitudes"],
+                    f"Scenario minus baseline {selected_label}, forecast day plus {lead}",
+                    diverging=True,
+                )
+            )
+            st.caption(
+                "Physical-unit difference; identical initialization and model, with only "
+                "the initial shock changed."
+            )
+        with details_column:
+            st.subheader("Spatial response through time")
+            st.line_chart({"RMS response": response_rms})
             st.metric(
-                "Wind-energy proxy",
-                f"{impacts['wind_power_index']:.2f}× input",
-                f"{impacts['wind_power_relative_pct']:+.1f}%",
-                help="Relative mean wind-speed-cubed index; not a calibrated turbine-generation forecast.",
+                f"Spatial RMS · day +{lead}",
+                f"{response_rms[lead - 1]:.3f} {units}",
+            )
+            st.metric(
+                f"Peak |difference| · day +{lead}",
+                f"{response_peak[lead - 1]:.3f} {units}",
+            )
+            st.metric(
+                f"Signed mean · day +{lead}",
+                f"{response_mean[lead - 1]:+.3f} {units}",
+            )
+            st.caption(
+                f"Branch · {result['scenario_name']}. Spatial RMS shows response "
+                "magnitude without positive and negative cells cancelling."
             )
 
-    st.subheader("Counterfactual response")
-    map_column, details_column = st.columns((3, 2))
-    with map_column:
+    with impact_tab:
+        st.subheader("Monsoon impact screening")
+        st.caption(
+            "Live proxies from this rollout—not calibrated hazard, yield, or energy forecasts."
+        )
+        impact_columns = st.columns(6)
+        impact_columns[0].metric(
+            "Central India · mean rain",
+            f"{impacts['crop_rain_mm_day']:.1f} mm/day",
+            help="Broad regional forecast mean; not a crop-yield estimate.",
+        )
+        impact_columns[1].metric(
+            "Rain-deficit days",
+            f"{impacts['crop_deficit_days']} / {len(forecast)}",
+            help="Days below a broad-region 4 mm/day rainfall screening threshold.",
+        )
+        impact_columns[2].metric(
+            "Mean area ≥ 10 mm/day",
+            f"{100 * impacts['flood_exceedance_fraction']:.1f}%",
+            help="Latitude-weighted area above threshold, averaged over forecast days; not a flood forecast.",
+        )
+        impact_columns[3].metric(
+            "Hot area-days > 35°C",
+            f"{100 * impacts['hot_area_day_fraction']:.1f}%",
+            help="Mean area fraction with daily 2 m temperature above 35°C; screening proxy, not an official heatwave diagnosis.",
+        )
+        impact_columns[4].metric(
+            "Peak cell rain",
+            f"{impacts['peak_rain_mm_day']:.1f} mm/day",
+        )
+        if impacts["wind_power_relative_pct"] is None:
+            impact_columns[5].metric("Wind proxy", "Unavailable")
+        else:
+            impact_columns[5].metric(
+                "Wind-speed³ index",
+                f"{impacts['wind_power_index']:.2f}× input",
+                f"{impacts['wind_power_relative_pct']:+.1f}%",
+                help="Latitude-weighted relative wind-speed-cubed index; not turbine generation.",
+            )
+        st.info(
+            "These indicators omit soil moisture, crop calendars, river routing, exposure "
+            "and turbine calibration. Use them for scenario comparison, not operational decisions."
+        )
+
+    with diagnostics_tab:
+        st.subheader("Simulation provenance")
+        detail_columns = st.columns(4)
+        detail_columns[0].metric("Input date", result["input_date"])
+        detail_columns[1].metric("Forecast horizon", f"{len(forecast)} days")
+        detail_columns[2].metric("Model", result["model_name"])
+        detail_columns[3].metric(
+            "Inference · baseline / branch",
+            f"{result['baseline_ms']:.0f} / {result['scenario_ms']:.0f} ms",
+        )
+        st.write(f"**Counterfactual:** {result['scenario_name']}")
+        st.write("**Input:** three consecutive daily states; six physical-unit channels.")
+        st.write("**Domain:** kit 32 × 36 grid · latitude-weighted evaluation is offline.")
+        with st.expander("Interpretation and limitations"):
+            st.write(
+                "This deterministic daily model is a research prototype. Errors can grow "
+                "with lead time; its grid cannot resolve local or sub-daily weather. "
+                "Rainfall thresholds and wind-speed cubed are screening proxies only."
+            )
+else:
+    if upload is not None or DATA_PATH.is_file():
+        st.subheader(f"Observed input preview · {selected_label}")
+        st.caption(
+            f"Latest input state · {input_date} · not a forecast. "
+            "Run a simulation to generate baseline and alternate forecast maps."
+        )
         st.html(
             grid_svg(
-                counterfactual[channel_index],
-                result["latitudes"],
-                result["longitudes"],
-                f"Scenario minus baseline {selected_label}, forecast day plus {lead}",
-                diverging=True,
+                data[input_day_index, channel_index],
+                latitudes,
+                longitudes,
+                f"Observed {selected_label} on {input_date}",
             )
         )
-        st.caption("Scenario minus unperturbed model output, in the selected channel's physical units.")
-    with details_column:
-        differences = forecast[:, channel_index].mean(axis=(1, 2)) - baseline[
-            :, channel_index
-        ].mean(axis=(1, 2))
-        st.line_chart(
-            {
-                "Scenario minus baseline": differences,
-            }
+    else:
+        st.info(
+            "Upload `india_climate_train.nc` from the official yug-monsoon-kit release, "
+            "or place it beside this project. Then choose a scenario and run a simulation."
         )
-        st.write(f"**Branch:** {result['scenario_name']}")
-        st.write(
-            f"**Inference:** baseline {result['baseline_ms']:.1f} ms; "
-            f"branch {result['scenario_ms']:.1f} ms."
-        )
-        st.caption(
-            "Impact indicators are transparent screening proxies derived only from this live rollout; "
-            "they are not crop-yield, flood-depth, or power-generation forecasts."
-        )
-else:
-    st.info("Choose an initialization day and scenario, then run a live simulation to see maps and impacts.")

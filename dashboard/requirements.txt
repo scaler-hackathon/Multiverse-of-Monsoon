@@ -1,3 +1,4 @@
 requests>=2.31,<3
 streamlit>=1.40,<2
 xarray>=2024.1
+netCDF4>=1.6,<2

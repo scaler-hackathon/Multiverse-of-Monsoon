@@ -10,7 +10,7 @@ endobj
 << /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
 endobj
 4 0 obj
-<< /Length 5184 >>
+<< /Length 5475 >>
 stream
 0.930 0.960 0.980 rg 0 0 595 842 re f
 0.055 0.110 0.200 rg 0 712 595 130 re f
@@ -21,10 +21,10 @@ stream
 0.090 0.390 0.720 rg BT /F2 8 Tf 1 0 0 1 541 28 Tm (1 / 2) Tj ET
 0.090 0.390 0.720 rg 42 684 5 16 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 687 Tm (A LEARNED DAILY STATE TRANSITION) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 665 Tm (VARSHA is a compact residual convolutional model. It receives three consecutive physical weather) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (states normalized with the kit statistics, two bundled geography fields, and day-of-year) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (sine/cosine planes. A four-block residual CNN predicts a normalized next-day change; the server) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (applies that change and feeds the new state back for the next forecast day.) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 665 Tm (VARSHA is a compact six-block, 64-channel residual convolutional model. It receives three) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (consecutive physical weather states normalized with the kit statistics, two bundled geography) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (fields, and calendar-aligned day-of-year sine/cosine planes. The network predicts normalized next-) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (day changes; the server applies bounds and feeds the new state back for the next forecast day.) Tj ET
 1.000 1.000 1.000 rg 42 521 119 82 re f
 0.090 0.390 0.720 rg 42 599 119 4 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 579 Tm (01  CONTEXT) Tj ET
@@ -61,9 +61,11 @@ stream
 0.090 0.390 0.720 rg 42 319 5 16 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 322 Tm (TEMPORAL HOLDOUT DIAGNOSTICS) Tj ET
 1.000 1.000 1.000 rg 42 180 511 118 re f
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 275 Tm (Held-out 2021, 71 windows: +1d mean skill +22%; rain CSI 0.50; +4d mean skill +6%; rain CSI 0.30; +8d) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 262 Tm (mean skill -6%; rain CSI 0.28. Day-8 spatial variance ratios range 0.66-0.99. This is an in-sample-era) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 249 Tm (temporal holdout, not proof of hidden 2023-24 skill.) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 275 Tm (2021 comparison, 71 windows: +1d mean skill +20%; rain CSI 0.47; +4d mean skill +8%; rain CSI 0.31;) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 262 Tm (+8d mean skill -1%; rain CSI 0.30; day-8 rain skill -27%. Day-8 spatial variance ratios range) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 249 Tm (0.77-2.92. Checkpoint training years are unrecorded; 2021 holdout validity is unverified. The selected) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 236 Tm (legacy rain head only predicts nonnegative increments. This does not establish skill on hidden 2023-24) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 223 Tm (cases.) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 216 Tm (Evaluation compares identical 2021 target windows against both persistence and training-period day-of-) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 204 Tm (year climatology, with latitude-weighted RMSE and a 10 mm/day heavy-rain CSI. Check) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 192 Tm (validation_metrics.json and rerun the documented command whenever model weights change.) Tj ET
@@ -73,7 +75,7 @@ endobj
 << /Type /Page /Parent 3 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 4 0 R >>
 endobj
 6 0 obj
-<< /Length 13389 >>
+<< /Length 13421 >>
 stream
 0.930 0.960 0.980 rg 0 0 595 842 re f
 0.055 0.110 0.200 rg 0 712 595 130 re f
@@ -85,9 +87,9 @@ stream
 0.090 0.390 0.720 rg 42 684 5 16 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 687 Tm (A LIVE, LOCAL MULTIVERSE) Tj ET
 0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 665 Tm (The separate Streamlit dashboard selects a real three-day state window from the team-kit NetCDF,) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (sends it to the local simulation API, and plots the returned 32 x 36 fields. The comparison map is) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (the shocked rollout minus the unperturbed rollout for the same initialization. Nothing is pre-) Tj ET
-0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (rendered and no remote weather service is contacted.) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (sends it to the local simulation API, and plots the returned 32 x 36 fields. Baseline and) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (alternate forecasts use a shared color scale; a separate map shows their physical-unit difference.) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (Nothing is pre-rendered and no remote weather service is contacted.) Tj ET
 0.150 0.420 0.840 rg 48 475 11 11 re f
 0.174 0.427 0.820 rg 60 475 11 11 re f
 0.197 0.434 0.800 rg 72 475 11 11 re f
@@ -332,15 +334,15 @@ stream
 1.000 1.000 1.000 rg 300 267 253 95 re f
 0.090 0.390 0.720 rg 300 358 253 4 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 312 338 Tm (IMPACT SCREEN) Tj ET
-0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 319 Tm (Live rainfall-deficit days, heavy-rain) Tj ET
-0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 308 Tm (coverage, peak rain, and a relative wind-speed-) Tj ET
-0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 297 Tm (cubed index.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 319 Tm (Area-weighted rain deficits, hot-area-days) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 308 Tm (above 35 C, heavy-rain coverage, peak rain, and) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 297 Tm (wind-speed-cubed index.) Tj ET
 0.090 0.390 0.720 rg 42 265 5 16 re f
-0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 268 Tm (IMPACT USE CASE: MONSOON STRESS AWARENESS) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 245 Tm (A stalled monsoon scenario can expose how a short-range rainfall deficit changes across the) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 233 Tm (central-India grid. The dashboard reports broad-area mean rain and deficit days alongside a heavy-) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 221 Tm (rain screen, so a viewer can compare the baseline and alternate branch before discussing crop-) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 209 Tm (water stress or flood preparedness.) Tj ET
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 268 Tm (IMPACT USE CASE: MONSOON STRESS AND HEAT SCREENING) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 245 Tm (A stalled monsoon scenario can expose how a short-range rainfall deficit changes across central) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 233 Tm (India. Latitude-weighted rain deficits, heavy-rain coverage, and a hot-area-day proxy above 35 C) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 221 Tm (let viewers compare the baseline and alternate branch when discussing crop-water stress, heat) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 209 Tm (exposure, or flood preparedness.) Tj ET
 0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 190 Tm (The indicators are deliberately labeled as screening proxies: there is no crop calendar, soil) Tj ET
 0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 178 Tm (moisture, irrigation, river routing, exposure data, or turbine calibration in the supplied kit.) Tj ET
 0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 166 Tm (They must not be interpreted as yield, flood depth, or electricity forecasts.) Tj ET
@@ -365,12 +367,12 @@ xref
 0000000085 00000 n 
 0000000160 00000 n 
 0000000223 00000 n 
-0000005458 00000 n 
-0000005594 00000 n 
-0000019035 00000 n 
-0000019171 00000 n 
+0000005749 00000 n 
+0000005885 00000 n 
+0000019358 00000 n 
+0000019494 00000 n 
 trailer
 << /Size 9 /Root 8 0 R >>
 startxref
-19220
+19543
 %%EOF

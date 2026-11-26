@@ -101,12 +101,31 @@ def _validation_summary():
     )
     if not pieces:
         return "Metrics file has no model results. Re-run the evaluator for the selected checkpoint."
+    training_years = metrics.get("checkpoint_training_years", "unrecorded")
+    if training_years == "unrecorded":
+        provenance = "Checkpoint training years are unrecorded; 2021 holdout validity is unverified."
+    elif isinstance(training_years, list) and 2021 in training_years:
+        provenance = "Checkpoint includes 2021; these results are not holdout evidence."
+    else:
+        provenance = "Checkpoint metadata records training years excluding 2021."
+    rain_skill = leads.get("8", {}).get("skill_vs_best_baseline", [])
+    if len(rain_skill) > 1:
+        pieces.append(f"day-8 rain skill {rain_skill[1]:+.0%}")
+    rain_mode = metrics.get("checkpoint_rain_mode")
+    rain_note = (
+        " The selected legacy rain head only predicts nonnegative increments."
+        if rain_mode == "softplus_increment"
+        else ""
+    )
     return (
-        f"Held-out 2021, {metrics['windows']} windows: "
+        f"2021 comparison, {metrics['windows']} windows: "
         + "; ".join(pieces)
         + ". "
         + spread
-        + " This is an in-sample-era temporal holdout, not proof of hidden 2023-24 skill."
+        + " "
+        + provenance
+        + rain_note
+        + " This does not establish skill on hidden 2023-24 cases."
     )
 
 
@@ -121,10 +140,10 @@ def build_pages():
     first.wrapped(
         42,
         665,
-        "VARSHA is a compact residual convolutional model. It receives three consecutive "
+        "VARSHA is a compact six-block, 64-channel residual convolutional model. It receives three consecutive "
         "physical weather states normalized with the kit statistics, two bundled geography "
-        "fields, and day-of-year sine/cosine planes. A four-block residual CNN predicts a "
-        "normalized next-day change; the server applies that change and feeds the new state "
+        "fields, and calendar-aligned day-of-year sine/cosine planes. The network predicts "
+        "normalized next-day changes; the server applies bounds and feeds the new state "
         "back for the next forecast day.",
         width_chars=98,
         size=9,
@@ -203,9 +222,9 @@ def build_pages():
         665,
         "The separate Streamlit dashboard selects a real three-day state window from the "
         "team-kit NetCDF, sends it to the local simulation API, and plots the returned "
-        "32 x 36 fields. The comparison map is the shocked rollout minus the unperturbed "
-        "rollout for the same initialization. Nothing is pre-rendered and no remote "
-        "weather service is contacted.",
+        "32 x 36 fields. Baseline and alternate forecasts use a shared color scale; a "
+        "separate map shows their physical-unit difference. Nothing is pre-rendered and "
+        "no remote weather service is contacted.",
         width_chars=98,
         size=9,
         leading=13,
@@ -244,18 +263,18 @@ def build_pages():
         253,
         95,
         "IMPACT SCREEN",
-        "Live rainfall-deficit days, heavy-rain coverage, peak rain, and a relative wind-speed-cubed index.",
+        "Area-weighted rain deficits, hot-area-days above 35 C, heavy-rain coverage, peak rain, and wind-speed-cubed index.",
         BLUE,
     )
 
-    second.section(42, 268, "Impact use case: monsoon stress awareness")
+    second.section(42, 268, "Impact use case: monsoon stress and heat screening")
     second.wrapped(
         42,
         245,
         "A stalled monsoon scenario can expose how a short-range rainfall deficit changes "
-        "across the central-India grid. The dashboard reports broad-area mean rain and "
-        "deficit days alongside a heavy-rain screen, so a viewer can compare the baseline "
-        "and alternate branch before discussing crop-water stress or flood preparedness.",
+        "across central India. Latitude-weighted rain deficits, heavy-rain coverage, and "
+        "a hot-area-day proxy above 35 C let viewers compare the baseline and alternate "
+        "branch when discussing crop-water stress, heat exposure, or flood preparedness.",
         width_chars=98,
         size=8.5,
         leading=12,
