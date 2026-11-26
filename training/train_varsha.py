@@ -107,7 +107,10 @@ def _rollout_batch(
     mean,
     std,
     heavy_rain_weight,
+    heavy_rain_lead_decay,
     late_temperature_weight,
+    late_lead_weight,
+    spatial_variance_weight,
 ):
     batch_size, horizon = targets.shape[:2]
     device = histories.device
@@ -120,6 +123,7 @@ def _rollout_batch(
     temp_max = (333.15 - mean_t[0]) / std_t[0]
     history = [histories[:, day] for day in range(3)]
     loss = torch.zeros((), dtype=torch.float32, device=device)
+    total_lead_weight = 0.0
 
     for step in range(horizon):
         forecast_doys = [_forecast_doy(doy, step + 1) for doy in input_doys]
@@ -187,15 +191,36 @@ def _rollout_batch(
         squared_error = (next_state - targets[:, step]).square()
         loss_weights = torch.ones_like(squared_error)
         target_rain = targets[:, step, 1] * std_t[1] + mean_t[1]
-        loss_weights[:, 1] = 1.0 + heavy_rain_weight * (
+        step_heavy_rain_weight = heavy_rain_weight * math.exp(
+            -heavy_rain_lead_decay * step
+        )
+        loss_weights[:, 1] = 1.0 + step_heavy_rain_weight * (
             target_rain >= 10.0
         ).to(dtype=squared_error.dtype)
         if step >= horizon // 2:
             loss_weights[:, 0] = late_temperature_weight
-        loss = loss + (squared_error * loss_weights).mean()
+        lead_weight = 1.0 + late_lead_weight * step / max(horizon - 1, 1)
+        step_loss = (squared_error * loss_weights).mean()
+        if spatial_variance_weight > 0.0 and step >= max(horizon // 2 - 1, 0):
+            predicted_variance = torch.var(
+                next_state, dim=(-2, -1), unbiased=False
+            )
+            target_variance = torch.var(
+                targets[:, step], dim=(-2, -1), unbiased=False
+            )
+            log_variance_error = torch.log(predicted_variance + 1e-4) - torch.log(
+                target_variance + 1e-4
+            )
+            variance_loss = F.smooth_l1_loss(
+                log_variance_error,
+                torch.zeros_like(log_variance_error),
+            )
+            step_loss = step_loss + spatial_variance_weight * variance_loss
+        loss = loss + lead_weight * step_loss
+        total_lead_weight += lead_weight
         history.append(next_state)
 
-    return loss / horizon
+    return loss / total_lead_weight
 
 
 def main():
@@ -205,7 +230,10 @@ def main():
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--heavy-rain-weight", type=float, default=3.0)
+    parser.add_argument("--heavy-rain-lead-decay", type=float, default=0.0)
     parser.add_argument("--late-temperature-weight", type=float, default=1.5)
+    parser.add_argument("--late-lead-weight", type=float, default=1.0)
+    parser.add_argument("--spatial-variance-weight", type=float, default=0.05)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--holdout-year",
@@ -227,8 +255,14 @@ def main():
         or args.batch_size < 1
         or not math.isfinite(args.heavy_rain_weight)
         or args.heavy_rain_weight < 0
+        or not math.isfinite(args.heavy_rain_lead_decay)
+        or args.heavy_rain_lead_decay < 0
         or not math.isfinite(args.late_temperature_weight)
         or args.late_temperature_weight <= 0
+        or not math.isfinite(args.late_lead_weight)
+        or args.late_lead_weight < 0
+        or not math.isfinite(args.spatial_variance_weight)
+        or args.spatial_variance_weight < 0
     ):
         parser.error("steps and batch size must be positive; rollout horizon must be 1..8")
 
@@ -342,7 +376,10 @@ def main():
             mean,
             std,
             args.heavy_rain_weight,
+            args.heavy_rain_lead_decay,
             args.late_temperature_weight,
+            args.late_lead_weight,
+            args.spatial_variance_weight,
         )
         if not torch.isfinite(loss):
             raise FloatingPointError(f"Non-finite training loss at step {step}.")
@@ -367,7 +404,10 @@ def main():
             "rollout_horizon": int(args.rollout_horizon),
             "learning_rate": float(args.learning_rate),
             "heavy_rain_weight": float(args.heavy_rain_weight),
+            "heavy_rain_lead_decay": float(args.heavy_rain_lead_decay),
             "late_temperature_weight": float(args.late_temperature_weight),
+            "late_lead_weight": float(args.late_lead_weight),
+            "spatial_variance_weight": float(args.spatial_variance_weight),
             "training_mode": "from_scratch" if args.from_scratch else "fine_tune",
             "initial_checkpoint_sha256": initial_checkpoint_sha256,
             "t2m_climatology_coefficients": torch.from_numpy(

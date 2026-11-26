@@ -221,8 +221,17 @@ def main(argv=None):
         "checkpoint_heavy_rain_weight": checkpoint_metadata.get(
             "heavy_rain_weight", "unrecorded"
         ),
+        "checkpoint_heavy_rain_lead_decay": checkpoint_metadata.get(
+            "heavy_rain_lead_decay", "unrecorded"
+        ),
         "checkpoint_late_temperature_weight": checkpoint_metadata.get(
             "late_temperature_weight", "unrecorded"
+        ),
+        "checkpoint_late_lead_weight": checkpoint_metadata.get(
+            "late_lead_weight", "unrecorded"
+        ),
+        "checkpoint_spatial_variance_weight": checkpoint_metadata.get(
+            "spatial_variance_weight", "unrecorded"
         ),
         "checkpoint_training_mode": checkpoint_metadata.get(
             "training_mode", "unrecorded"

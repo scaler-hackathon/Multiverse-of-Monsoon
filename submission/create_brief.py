@@ -151,6 +151,9 @@ def _validation_summary():
                 provenance = f"Checkpoint metadata records training years excluding {year_label}."
         else:
             provenance = "Checkpoint training-year metadata could not establish holdout independence."
+    selection_note = metrics.get("holdout_provenance_note")
+    if isinstance(selection_note, str) and selection_note.strip():
+        provenance = selection_note.strip()
     day8 = leads.get("8", {})
     rain_skill = day8.get(
         "mean_window_skill_vs_best_baseline",
