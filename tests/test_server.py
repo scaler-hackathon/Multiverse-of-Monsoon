@@ -107,6 +107,41 @@ class InferenceEdgeCaseTests(unittest.TestCase):
             finally:
                 serve.load_model_weights(serve.model, serve.weights_path)
 
+    def test_temperature_climatology_preserves_shock_minus_control_response(self):
+        coefficients = torch.zeros((5, 32, 36), dtype=torch.float32)
+        coefficients[0].fill_(300.0)
+        checkpoint = {
+            "state_dict": serve.model.state_dict(),
+            "rain_mode": serve.SIGNED_RAIN_MODE,
+            "t2m_climatology_coefficients": coefficients,
+            "t2m_anomaly_retention": 0.92,
+            "t2m_anomaly_decay": 0.18,
+        }
+        initial = np.zeros((3, 6, 32, 36), dtype=np.float32)
+        initial[:, 0] = 290.0
+        initial[:, 1] = 5.0
+        perturbation = np.zeros((6, 32, 36), dtype=np.float32)
+        perturbation[0, 10:14, 12:16] = 3.0
+        zero_delta = torch.zeros((2, 6, 32, 36), dtype=torch.float32)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "climatology.pt"
+            torch.save(checkpoint, path)
+            try:
+                serve.load_model_weights(serve.model, path)
+                with patch.object(serve.model, "forward", return_value=zero_delta):
+                    control = serve.simulate(initial, self.phase, 10, None)
+                    shocked = serve.simulate(
+                        initial, self.phase, 10, perturbation
+                    )
+                response = shocked[:, 0] - control[:, 0]
+                expected = np.broadcast_to(
+                    perturbation[0], response.shape
+                )
+                np.testing.assert_allclose(response, expected, atol=1e-5)
+            finally:
+                serve.load_model_weights(serve.model, serve.weights_path)
+
     def test_invalid_temperature_climatology_metadata_is_rejected(self):
         checkpoint = {
             "state_dict": serve.model.state_dict(),

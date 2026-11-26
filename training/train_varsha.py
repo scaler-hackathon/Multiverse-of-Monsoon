@@ -13,9 +13,9 @@ import torch.optim as optim
 import xarray as xr
 
 if __package__:
-    from .data_utils import resolve_dataset_path
+    from .data_utils import resolve_dataset_path, year_split_bounds
 else:
-    from data_utils import resolve_dataset_path
+    from data_utils import resolve_dataset_path, year_split_bounds
 
 ROOT = Path(__file__).resolve().parents[1]
 HEIGHT, WIDTH = 32, 36
@@ -207,6 +207,12 @@ def main():
     parser.add_argument("--heavy-rain-weight", type=float, default=3.0)
     parser.add_argument("--late-temperature-weight", type=float, default=1.5)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--holdout-year",
+        type=int,
+        required=True,
+        help="Year in the dataset time axis to exclude from training.",
+    )
     parser.add_argument("--data", type=Path)
     parser.add_argument("--output", type=Path, default=ROOT / "varsha_weights.pt")
     parser.add_argument(
@@ -239,7 +245,7 @@ def main():
             raise ValueError("Dataset must provide data, static, and time.")
         raw_data = np.asarray(ds["data"].values, dtype=np.float32)
         raw_static = np.asarray(ds["static"].values, dtype=np.float32)
-        times = np.asarray(ds.time.values)
+        years = np.asarray(ds.time.dt.year.values, dtype=np.int32)
         day_of_year = np.asarray(ds.time.dt.dayofyear.values, dtype=np.int16)
 
     if raw_data.ndim != 4 or raw_data.shape[1:] != (6, HEIGHT, WIDTH):
@@ -262,9 +268,7 @@ def main():
     ):
         raise ValueError("stats.json must contain six finite means and positive standard deviations.")
 
-    val_start = int(np.searchsorted(times, np.datetime64("2021-01-01")))
-    if val_start <= 0 or val_start >= len(raw_data):
-        raise ValueError("Could not establish a non-empty training split before 2021.")
+    val_start, _ = year_split_bounds(years, args.holdout_year)
     train_data = (raw_data[:val_start] - mean[None, :, None, None]) / std[
         None, :, None, None
     ]
@@ -355,13 +359,9 @@ def main():
         {
             "state_dict": model.state_dict(),
             "rain_mode": SIGNED_RAIN_MODE,
-            "training_years": (
-                f"{np.datetime_as_string(times[0], unit='Y')}-"
-                f"{np.datetime_as_string(times[val_start - 1], unit='Y')}"
-            ),
-            "validation_year": str(
-                np.datetime_as_string(times[val_start], unit="Y")
-            ),
+            "training_years": f"{years[0]}-{years[val_start - 1]}",
+            "validation_year": int(args.holdout_year),
+            "holdout_year": int(args.holdout_year),
             "training_steps": int(args.steps),
             "training_batch_size": int(args.batch_size),
             "rollout_horizon": int(args.rollout_horizon),
@@ -382,7 +382,7 @@ def main():
     os.replace(temporary_path, args.output)
 
     print(f"Candidate weights saved to {args.output}")
-    print("Validation year 2021 was excluded from training.")
+    print(f"Holdout year {args.holdout_year} was excluded from training.")
 
 
 if __name__ == "__main__":

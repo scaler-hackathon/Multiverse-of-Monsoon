@@ -157,5 +157,5 @@
     0.836309552192688,
     0.9024921655654907
   ],
-  "model_selection_note": "The 2021 evaluation split was used to compare candidate training configurations; treat these metrics as validation, not an untouched test estimate."
+  "model_selection_note": "The 2021 split was used to compare candidate training configurations; treat these metrics as validation, not an untouched test estimate."
 }

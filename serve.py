@@ -173,7 +173,8 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
     doy_sincos: [sin, cos] of day-of-year for init_states[-1].
     returns: [steps, 6, 32, 36] physical units.
     """
-    states = _arr(init_states, (3, 6, 32, 36), "init_states").copy()
+    baseline_states = _arr(init_states, (3, 6, 32, 36), "init_states").copy()
+    states = baseline_states.copy()
     if isinstance(steps, bool) or not isinstance(steps, (int, np.integer)) or not 1 <= steps <= 30:
         raise ValueError("steps must be an integer between 1 and 30.")
     phase = np.asarray(doy_sincos, dtype=np.float64)
@@ -181,14 +182,27 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
         raise ValueError("doy_sincos must contain two finite numbers.")
     if float(np.hypot(phase[0], phase[1])) < 1e-8:
         raise ValueError("doy_sincos must define a non-zero seasonal phase.")
+    has_nonzero_perturbation = False
     if perturbation is not None:
-        states[-1] = states[-1] + _arr(perturbation, (6, 32, 36), "perturbation")
+        perturbation_values = _arr(
+            perturbation, (6, 32, 36), "perturbation"
+        )
+        has_nonzero_perturbation = bool(np.any(perturbation_values))
+        if has_nonzero_perturbation:
+            states[-1] = states[-1] + perturbation_values
         if not np.isfinite(states[-1]).all():
             raise ValueError("Perturbed initialization must remain finite.")
 
     # Normalize input states: (3, 6, 32, 36) with (6, 1, 1)
     norm_states = (states - CH_MEAN) / CH_STD
     history = [norm_states[i] for i in range(3)]
+    paired_shock = (
+        has_nonzero_perturbation
+        and model.t2m_climatology_coefficients is not None
+    )
+    if paired_shock:
+        baseline_norm_states = (baseline_states - CH_MEAN) / CH_STD
+        baseline_history = [baseline_norm_states[i] for i in range(3)]
 
     # Infer base day of year from [sin, cos]
     sin_val, cos_val = float(phase[0]), float(phase[1])
@@ -210,22 +224,8 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
                 np.full((H, W), cos_d, dtype=np.float32)
             ], axis=0)
 
-            # Assemble 22 channels: 18 dynamic + 2 static + 2 doy
-            x_in = np.concatenate([
-                np.concatenate(history[-3:], axis=0),
-                NORM_STATIC,
-                doy_planes
-            ], axis=0)
-
-            x_tensor = torch.from_numpy(x_in[None])
-            delta = model(x_tensor).numpy()[0]
-
-            # Autoregressive update
-            next_norm = history[-1] + delta
-
-            # De-normalize to physical units
-            next_phys = next_norm * CH_STD + CH_MEAN
             climatology = model.t2m_climatology_coefficients
+            climate_t2m = None
             if climatology is not None:
                 climate_phase = 2.0 * math.pi * ((curr_doy - 1.0) % 365.0) / 365.0
                 climate_basis = np.asarray(
@@ -244,12 +244,60 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
                 retention = model.t2m_anomaly_retention * math.exp(
                     -model.t2m_anomaly_decay * step
                 )
-                next_phys[0] = climate_t2m + retention * (
-                    next_phys[0] - climate_t2m
+            active_histories = (
+                (baseline_history, history)
+                if paired_shock
+                else (history,)
+            )
+            model_inputs = []
+            for active_history in active_histories:
+                model_inputs.append(
+                    np.concatenate(
+                        (
+                            np.concatenate(active_history[-3:], axis=0),
+                            NORM_STATIC,
+                            doy_planes,
+                        ),
+                        axis=0,
+                    )
                 )
+            deltas = model(torch.from_numpy(np.stack(model_inputs))).numpy()
+
+            if paired_shock:
+                baseline_next_norm = baseline_history[-1] + deltas[0]
+                baseline_next_phys = baseline_next_norm * CH_STD + CH_MEAN
+                next_norm = history[-1] + deltas[1]
+                next_phys = next_norm * CH_STD + CH_MEAN
+                baseline_raw_t2m = baseline_next_phys[0].copy()
+                baseline_next_phys[0] = climate_t2m + retention * (
+                    baseline_raw_t2m - climate_t2m
+                )
+                baseline_next_phys[1] = np.clip(
+                    baseline_next_phys[1], 0.0, None
+                )
+                baseline_next_phys[0] = np.clip(
+                    baseline_next_phys[0], TEMP_MIN, TEMP_MAX
+                )
+                if not np.isfinite(baseline_next_phys).all():
+                    raise FloatingPointError(
+                        f"Model produced a non-finite control forecast at lead {step + 1}."
+                    )
+                next_phys[0] = baseline_next_phys[0] + (
+                    next_phys[0] - baseline_raw_t2m
+                )
+                baseline_history.append(
+                    (baseline_next_phys - CH_MEAN) / CH_STD
+                )
+            else:
+                next_norm = history[-1] + deltas[0]
+                next_phys = next_norm * CH_STD + CH_MEAN
+                if climate_t2m is not None:
+                    next_phys[0] = climate_t2m + retention * (
+                        next_phys[0] - climate_t2m
+                    )
 
             # Physical guards per API Contract
-            next_phys[1] = np.clip(next_phys[1], 0.0, None)         # rain >= 0
+            next_phys[1] = np.clip(next_phys[1], 0.0, None)
             next_phys[0] = np.clip(next_phys[0], TEMP_MIN, TEMP_MAX)
             if not np.isfinite(next_phys).all():
                 raise FloatingPointError(f"Model produced a non-finite forecast at lead {step + 1}.")

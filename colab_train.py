@@ -19,9 +19,9 @@ to your tasks.txt items:
 
 Usage in Colab
 --------------
-  !python colab_train.py --phase all          # run everything (4-5 h on T4)
-  !python colab_train.py --phase 3            # only single-step warmup
-  !python colab_train.py --phase 4            # only multi-step curriculum
+  !python colab_train.py --holdout-year YEAR --phase all
+  !python colab_train.py --holdout-year YEAR --phase 3
+  !python colab_train.py --holdout-year YEAR --phase 4
   --smoke                                     # tiny run, finishes in <2 min
 """
 
@@ -45,7 +45,11 @@ parser.add_argument("--phase", default="all",
 parser.add_argument("--smoke", action="store_true",
     help="Smoke mode: tiny dataset, 50 steps — finishes in <2 min")
 parser.add_argument("--full-train", "--full_train", action="store_true",
-    help="Train on all years (2005-2021) for final submission")
+    help="Train on all available years, including the holdout (final refit only)")
+parser.add_argument("--holdout-year", type=int, required=True,
+    help="Year in the dataset time axis to reserve for final evaluation")
+parser.add_argument("--validation-years", type=int, default=2,
+    help="Number of years immediately before the holdout to use for validation")
 parser.add_argument("--drive_root", default="/content/drive/MyDrive/varsha",
     help="Path on Drive where you placed the data files")
 parser.add_argument("--out_dir", default="/content/varsha_out",
@@ -81,11 +85,12 @@ for p in [NC_PATH, STATS_PATH]:
         sys.exit(f"ERROR: {p} not found. Upload it to Drive first.")
 
 ds         = xr.open_dataset(NC_PATH)
-raw_data   = ds["data"].values.astype(np.float32)   # [6209, 6, 32, 36]
+raw_data   = ds["data"].values.astype(np.float32)   # [time, 6, 32, 36]
 raw_static = ds["static"].values.astype(np.float32)  # [2, 32, 36]
 import pandas as pd
 times      = pd.to_datetime(ds.coords["time"].values)
 day_of_year = times.day_of_year.to_numpy(dtype=np.int16)
+years      = times.year.to_numpy(dtype=np.int32)
 ds.close()
 
 with open(STATS_PATH) as f:
@@ -96,14 +101,26 @@ CH_STD  = np.array(stats["std"],  dtype=np.float32)  # [6]
 mean4   = CH_MEAN.reshape(1, 6, 1, 1)
 std4    = CH_STD.reshape(1, 6, 1, 1)
 
-norm_data = (raw_data - mean4) / std4   # [6209, 6, 32, 36]
-
-# Canonical year-based split (Task 3)
-# Train 2005-2018: indices 0..5112
-# Val   2019-2020: indices 5113..5843
-# Test  2021:      indices 5844..6208
-TRAIN_END = 5113
-VAL_END   = 5844
+norm_data = (raw_data - mean4) / std4   # [time, 6, 32, 36]
+if args.validation_years < 1 or np.any(np.diff(years) < 0):
+    sys.exit("ERROR: validation-years must be positive and time coordinates sorted.")
+holdout_start = int(np.searchsorted(years, args.holdout_year, side="left"))
+holdout_end = int(np.searchsorted(years, args.holdout_year + 1, side="left"))
+validation_start = int(
+    np.searchsorted(
+        years, args.holdout_year - args.validation_years, side="left"
+    )
+)
+if (
+    holdout_start == 0
+    or holdout_end <= holdout_start
+    or validation_start == 0
+    or validation_start >= holdout_start
+):
+    sys.exit(
+        "ERROR: requested holdout and preceding validation years must exist "
+        "after earlier training data."
+    )
 
 if args.full_train:
     train_data = norm_data
@@ -111,11 +128,13 @@ if args.full_train:
     val_data = norm_data[:0]
     val_doys = day_of_year[:0]
 else:
-    train_data = norm_data[:TRAIN_END]
-    train_doys = day_of_year[:TRAIN_END]
-    val_data = norm_data[TRAIN_END:VAL_END]
-    val_doys = day_of_year[TRAIN_END:VAL_END]
-test_data = norm_data[VAL_END:] if not args.full_train else norm_data[:0]
+    train_data = norm_data[:validation_start]
+    train_doys = day_of_year[:validation_start]
+    val_data = norm_data[validation_start:holdout_start]
+    val_doys = day_of_year[validation_start:holdout_start]
+test_data = (
+    norm_data[holdout_start:holdout_end] if not args.full_train else norm_data[:0]
+)
 
 # Normalise static fields
 s_mean = raw_static.mean(axis=(1,2), keepdims=True)
@@ -217,16 +236,20 @@ def _checkpoint_payload():
         training_years = [int(times[0].year), int(times[-1].year)]
         validation_years = None
     else:
-        training_years = [int(times[0].year), int(times[TRAIN_END - 1].year)]
+        training_years = [
+            int(years[0]),
+            int(years[validation_start - 1]),
+        ]
         validation_years = [
-            int(times[TRAIN_END].year),
-            int(times[VAL_END - 1].year),
+            int(years[validation_start]),
+            int(years[holdout_start - 1]),
         ]
     return {
         "state_dict": model.state_dict(),
         "rain_mode": "signed_increment",
         "training_years": training_years,
         "validation_years": validation_years,
+        "holdout_year": int(args.holdout_year),
     }
 
 

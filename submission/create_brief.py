@@ -101,13 +101,31 @@ def _validation_summary():
     )
     if not pieces:
         return "Metrics file has no model results. Re-run the evaluator for the selected checkpoint."
+    holdout_year = metrics.get("holdout_year")
+    year_label = (
+        str(holdout_year)
+        if isinstance(holdout_year, int) and not isinstance(holdout_year, bool)
+        else "selected-year"
+    )
     training_years = metrics.get("checkpoint_training_years", "unrecorded")
     if training_years == "unrecorded":
-        provenance = "Checkpoint training years are unrecorded; 2021 holdout validity is unverified."
-    elif isinstance(training_years, list) and 2021 in training_years:
-        provenance = "Checkpoint includes 2021; these results are not holdout evidence."
+        provenance = f"Checkpoint training years are unrecorded; {year_label} holdout validity is unverified."
     else:
-        provenance = "Checkpoint metadata records training years excluding 2021."
+        trained_through = None
+        if isinstance(training_years, list) and training_years:
+            trained_through = max(training_years)
+        elif isinstance(training_years, str) and "-" in training_years:
+            try:
+                trained_through = int(training_years.rsplit("-", 1)[1])
+            except ValueError:
+                trained_through = None
+        if holdout_year is not None and trained_through is not None:
+            if trained_through >= holdout_year:
+                provenance = f"Checkpoint includes {year_label}; these results are not holdout evidence."
+            else:
+                provenance = f"Checkpoint metadata records training years excluding {year_label}."
+        else:
+            provenance = "Checkpoint training-year metadata could not establish holdout independence."
     rain_skill = leads.get("8", {}).get("skill_vs_best_baseline", [])
     if len(rain_skill) > 1:
         pieces.append(f"day-8 rain skill {rain_skill[1]:+.0%}")
@@ -118,14 +136,14 @@ def _validation_summary():
         else ""
     )
     return (
-        f"2021 comparison, {metrics['windows']} windows: "
+        f"{year_label} comparison, {metrics['windows']} windows: "
         + "; ".join(pieces)
         + ". "
         + spread
         + " "
         + provenance
         + rain_note
-        + " This does not establish skill on hidden 2023-24 cases."
+        + " This does not establish skill on hidden evaluation cases."
     )
 
 
@@ -168,7 +186,9 @@ def build_pages():
         "finite-value checks, a nonnegative-rain floor, and -40 C to +60 C temperature "
         "bounds protect the rollout from common numerical failures. Training now includes "
         "multi-day autoregressive loss, so later model inputs include the model's own "
-        "predictions. These are engineering guards, not conservation laws.",
+        "predictions. Shock requests compare a matched control trajectory so the seasonal "
+        "anchor does not erase the shock response. These are engineering guards, not "
+        "conservation laws.",
         width_chars=98,
         size=8.5,
         leading=12,
@@ -178,8 +198,8 @@ def build_pages():
         397,
         "Limits: deterministic 1-degree daily fields cannot resolve local storms or "
         "sub-daily extremes. Error compounds with lead time; rainfall and climate trends "
-        "can be misrepresented. The 2005-2021 data cannot establish skill on the hidden "
-        "2023-2024 cases. Rain, flood, and wind-energy indicators are screening proxies, "
+        "can be misrepresented. The supplied training archive cannot establish skill on "
+        "hidden evaluation cases. Rain, flood, and wind-energy indicators are screening proxies, "
         "not operational warnings or calibrated impact forecasts.",
         width_chars=98,
         size=8.5,
@@ -200,7 +220,7 @@ def build_pages():
     first.wrapped(
         56,
         216,
-        "Evaluation compares identical 2021 target windows against both persistence and "
+        "Evaluation compares identical holdout-year target windows against both persistence and "
         "training-period day-of-year climatology, with latitude-weighted RMSE and a 10 "
         "mm/day heavy-rain CSI. Check validation_metrics.json and rerun the documented "
         "command whenever model weights change.",
@@ -253,7 +273,7 @@ def build_pages():
         253,
         95,
         "PHYSICAL SHOCKS",
-        "Warm Bay: +3 K and +15% TCWV in the kit box. Arabian Sea stall: -40% u10 and v10. Zero shock is an exact identity check.",
+        "Warm Bay: +3 K and +15% TCWV in the kit box. Arabian Sea stall: -40% u10 and v10. A matched control preserves shock response; zero shock is identity.",
         TEAL,
     )
     _card(

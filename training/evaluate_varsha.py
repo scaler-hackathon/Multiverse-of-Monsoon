@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import xarray as xr
-from data_utils import resolve_dataset_path
+from data_utils import resolve_dataset_path, year_split_bounds
 
 ROOT = Path(__file__).resolve().parents[1]
 HEIGHT, WIDTH = 32, 36
@@ -17,17 +17,18 @@ LEADS = (1, 4, 8)
 METHODS = ("model", "persistence", "climatology")
 
 
-def load_validation_data(data_path=None):
+def load_validation_data(data_path=None, holdout_year=None):
     data_path = resolve_dataset_path(data_path)
     with xr.open_dataset(data_path) as ds:
         data = np.asarray(ds["data"].values, dtype=np.float32)
         times = np.asarray(ds.time.values)
+        years = np.asarray(ds.time.dt.year.values, dtype=np.int32)
         latitudes = np.asarray(ds.lat.values, dtype=np.float64)
         day_of_year = np.asarray(ds.time.dt.dayofyear.values, dtype=np.int16)
 
-    val_start = int(np.searchsorted(times, np.datetime64("2021-01-01")))
-    if val_start <= 0 or val_start >= len(data):
-        raise ValueError("Expected a training period before the 2021 holdout.")
+    if holdout_year is None:
+        raise ValueError("Pass --holdout-year to select the validation year.")
+    val_start, val_end = year_split_bounds(years, holdout_year)
     if data.shape[1:] != (6, HEIGHT, WIDTH) or not np.isfinite(data).all():
         raise ValueError(f"Unexpected or non-finite climate data: {data.shape}")
     if latitudes.shape != (HEIGHT,):
@@ -48,7 +49,7 @@ def load_validation_data(data_path=None):
         raise ValueError("stats.json must define the six API channels.")
     return data, times, day_of_year, climatology, np.cos(
         np.deg2rad(latitudes)
-    ).astype(np.float64), stats
+    ).astype(np.float64), stats, val_start, val_end
 
 
 def _accumulate(metrics, scores, lead, forecast, truth, weights):
@@ -72,6 +73,12 @@ def main(argv=None):
     )
     parser.add_argument("--stride", type=int, default=5)
     parser.add_argument("--baselines-only", action="store_true")
+    parser.add_argument(
+        "--holdout-year",
+        type=int,
+        required=True,
+        help="Year in the dataset time axis to evaluate.",
+    )
     parser.add_argument("--weights", type=Path, default=ROOT / "varsha_weights.pt")
     parser.add_argument("--data", type=Path)
     parser.add_argument("--json-out", type=Path)
@@ -80,12 +87,20 @@ def main(argv=None):
         parser.error("--stride must be positive")
 
     torch.set_num_threads(min(4, torch.get_num_threads()))
-    data, times, day_of_year, climatology, lat_weights, stats = (
-        load_validation_data(args.data)
+    (
+        data,
+        times,
+        day_of_year,
+        climatology,
+        lat_weights,
+        stats,
+        validation_start,
+        validation_end,
+    ) = (
+        load_validation_data(args.data, args.holdout_year)
     )
     weights = lat_weights
     denominator = float(weights.sum() * WIDTH)
-    validation_start = int(np.searchsorted(times, np.datetime64("2021-01-01")))
     channels = stats["channels"]
 
     sums = {
@@ -110,7 +125,9 @@ def main(argv=None):
         checkpoint_metadata = model.load_model_weights(model.model, args.weights)
         torch.set_num_threads(min(4, torch.get_num_threads()))
 
-    starts = range(validation_start + 2, len(data) - max(LEADS), args.stride)
+    starts = range(
+        validation_start + 2, validation_end - max(LEADS), args.stride
+    )
     windows = list(starts)
     if not windows:
         raise ValueError("Validation split contains no complete forecast windows.")
@@ -155,7 +172,7 @@ def main(argv=None):
             print(f"Evaluated {number}/{len(windows)} held-out windows")
 
     results = {
-        "holdout_year": 2021,
+        "holdout_year": int(args.holdout_year),
         "windows": len(windows),
         "stride": args.stride,
         "channels": channels,
@@ -197,11 +214,15 @@ def main(argv=None):
             "t2m_anomaly_decay", "none"
         ),
         "holdout_provenance_note": (
-            "2021 scores are only an untouched holdout if they were not used for candidate selection."
+            f"{args.holdout_year} scores are only an untouched holdout if they were "
+            "not used for candidate selection."
         ),
         "leads": {},
     }
-    print(f"\nHeld-out year: 2021 | windows: {len(windows)} | stride: {args.stride}")
+    print(
+        f"\nHeld-out year: {args.holdout_year} | windows: {len(windows)} "
+        f"| stride: {args.stride}"
+    )
     for lead in LEADS:
         rmse = {
             method: np.sqrt(sums[method][lead] / (len(windows) * denominator))

@@ -6,7 +6,7 @@ VARSHA is an offline, autoregressive Indian weather digital twin on the kit’s 
 
 ## Model and safeguards
 
-The six-block, 64-channel 2D ResNet predicts normalized daily increments for six dynamic fields, conditioned on day-of-year sine/cosine planes and two bundled geography fields. `stats.json` handles normalization internally; the API boundary remains in physical units. Each forecast state is autoregressive and clamps precipitation at zero and temperature to the contract range. The current checkpoint uses signed rainfall increments and a bundled two-harmonic temperature climatology; lead-decaying anomaly retention reduces long-range temperature drift without shipping a daily lookup table. Legacy checkpoints retain their original rain head and do not use the seasonal correction.
+The six-block, 64-channel 2D ResNet predicts normalized daily increments for six dynamic fields, conditioned on day-of-year sine/cosine planes and two bundled geography fields. `stats.json` handles normalization internally; the API boundary remains in physical units. Each forecast state is autoregressive and clamps precipitation at zero and temperature to the contract range. The current checkpoint uses signed rainfall increments and a bundled two-harmonic temperature climatology; lead-decaying anomaly retention reduces long-range temperature drift without shipping a daily lookup table. For a nonzero shock, inference evolves a matched control and shocked trajectory together, applying seasonal anchoring to the control and preserving the model-produced shock-minus-control temperature response. Zero perturbations remain an exact identity. Legacy checkpoints retain their original rain head and do not use the seasonal correction.
 
 The bundled checkpoint is a 1,200-step CPU fine-tune on 2005–2020, using 8-day rollouts, heavy-rain-weighted loss, and late-lead temperature weighting; it is not the full Colab curriculum. Candidate selection used 2021 metrics in `submission/validation_metrics.json`, so those results are validation—not an untouched test or a guarantee of skill on hidden 2023–24 cases.
 
@@ -40,17 +40,17 @@ python -m monsoon_r1.schema_validator http://127.0.0.1:8000
 
 ## Train and evaluate
 
-Keep the training NetCDF outside the repository. Training scripts accept `--data PATH`; by default they look beside the repository. `train_varsha.py` trains through 2020 and reserves 2021. It writes signed-rain candidate checkpoints without overwriting the submitted weights:
+Keep the training NetCDF outside the repository. Training scripts accept `--data PATH`; by default they look beside the repository. Both scripts require `--holdout-year` and derive the split from the dataset time-axis years. The example uses 2021, which remains a used-for-selection validation year for this checkpoint. Training writes signed-rain candidate checkpoints without overwriting submitted weights:
 
 ```powershell
-python .\training\train_varsha.py --steps 1200 --rollout-horizon 8 --batch-size 4 --learning-rate 0.000005 --heavy-rain-weight 3 --late-temperature-weight 1.5 --initial-weights .\varsha_weights.pt --output .\varsha_candidate.pt
-python .\training\evaluate_varsha.py --weights .\varsha_candidate.pt --json-out .\submission\validation_metrics.json
+python .\training\train_varsha.py --holdout-year 2021 --steps 1200 --rollout-horizon 8 --batch-size 4 --learning-rate 0.000005 --heavy-rain-weight 3 --late-temperature-weight 1.5 --initial-weights .\varsha_weights.pt --output .\varsha_candidate.pt
+python .\training\evaluate_varsha.py --holdout-year 2021 --weights .\varsha_candidate.pt --json-out .\submission\validation_metrics.json
 python .\training\evaluate_baseline.py
 ```
 
 Evaluation compares aligned 2021 windows against persistence and day-of-year climatology, reporting latitude-weighted RMSE, heavy-rain CSI, rollout variance and physical-validity checks. A checkpoint trained with Colab’s `--full-train` option has seen 2021, so its 2021 scores are not holdout evidence. Historical scores never guarantee skill on the hidden 2023–24 events; inspect the checkpoint provenance and full report before replacing `varsha_weights.pt`.
 
-For GPU training, upload `colab_train.py`, `india_climate_train.nc`, and `stats.json` to the same mounted Drive folder. Run `python colab_train.py --smoke` first, then `python colab_train.py --phase all`. The default split trains on 2005–2018, validates on 2019–2020, and leaves 2021 untouched. Use `--full-train` only for a final refit after model selection; that run has no internal validation holdout.
+For GPU training, upload `colab_train.py`, `india_climate_train.nc`, and `stats.json` to the same mounted Drive folder. Run `python colab_train.py --holdout-year 2021 --smoke` first, then `python colab_train.py --holdout-year 2021 --phase all`. The split is derived from the time axis: the requested year is held out, and the preceding two years are used for validation. Use `--full-train` only for a final refit after model selection; that run includes the holdout year and has no internal validation holdout.
 
 ## Submission contents and limits
 
