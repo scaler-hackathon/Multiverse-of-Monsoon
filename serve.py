@@ -6,12 +6,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 
 app = FastAPI()
 MODEL_NAME = "VARSHA-v1-ResNet"
 
 ROOT = Path(__file__).resolve().parent
+torch.set_num_threads(min(4, torch.get_num_threads()))
 
 # --- 1. Model Architecture ---
 class ResBlock(nn.Module):
@@ -59,6 +60,8 @@ with open(ROOT / "stats.json") as f:
 CH_MEAN = np.array(stats["mean"], dtype=np.float32).reshape(6, 1, 1)
 CH_STD = np.array(stats["std"], dtype=np.float32).reshape(6, 1, 1)
 NORM_STATIC = np.load(ROOT / "static_norm.npy").astype(np.float32)
+TEMP_MIN = float(np.nextafter(np.float32(233.15), np.float32(np.inf)))
+TEMP_MAX = float(np.float32(333.15))
 
 model = VarshaNet()
 weights_path = ROOT / "varsha_weights.pt"
@@ -67,12 +70,30 @@ model.eval()
 
 
 # --- 3. Request Parsing ---
-def _arr(x):
+def _arr(x, expected_shape, name):
     """Accept nested lists (canonical contract) or base64 dicts."""
     if isinstance(x, dict):
         import base64
-        return np.frombuffer(base64.b64decode(x["b64"]), dtype="<f4").reshape(x["shape"]).astype("f4")
-    return np.asarray(x, dtype="f4")
+        try:
+            if list(x["shape"]) != list(expected_shape):
+                raise ValueError(f"{name} must have shape {expected_shape}.")
+            raw = base64.b64decode(x["b64"], validate=True)
+            expected_bytes = int(np.prod(expected_shape)) * np.dtype("<f4").itemsize
+            if len(raw) != expected_bytes:
+                raise ValueError(f"{name} has an invalid encoded length.")
+            result = np.frombuffer(raw, dtype="<f4").reshape(expected_shape).copy()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid {name}: {exc}") from exc
+    else:
+        try:
+            result = np.asarray(x, dtype=np.float32)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{name} must contain numeric values.") from exc
+        if result.shape != expected_shape:
+            raise ValueError(f"{name} must have shape {expected_shape}, got {result.shape}.")
+    if not np.isfinite(result).all():
+        raise ValueError(f"{name} must contain only finite values.")
+    return result.astype(np.float32, copy=False)
 
 
 # --- 4. Simulation Engine ---
@@ -83,16 +104,25 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
     doy_sincos: [sin, cos] of day-of-year for init_states[-1].
     returns: [steps, 6, 32, 36] physical units.
     """
-    states = init_states.copy()
+    states = _arr(init_states, (3, 6, 32, 36), "init_states").copy()
+    if isinstance(steps, bool) or not isinstance(steps, (int, np.integer)) or not 1 <= steps <= 30:
+        raise ValueError("steps must be an integer between 1 and 30.")
+    phase = np.asarray(doy_sincos, dtype=np.float64)
+    if phase.shape != (2,) or not np.isfinite(phase).all():
+        raise ValueError("doy_sincos must contain two finite numbers.")
+    if float(np.hypot(phase[0], phase[1])) < 1e-8:
+        raise ValueError("doy_sincos must define a non-zero seasonal phase.")
     if perturbation is not None:
-        states[-1] = states[-1] + perturbation
+        states[-1] = states[-1] + _arr(perturbation, (6, 32, 36), "perturbation")
+        if not np.isfinite(states[-1]).all():
+            raise ValueError("Perturbed initialization must remain finite.")
 
     # Normalize input states: (3, 6, 32, 36) with (6, 1, 1)
     norm_states = (states - CH_MEAN) / CH_STD
     history = [norm_states[i] for i in range(3)]
 
     # Infer base day of year from [sin, cos]
-    sin_val, cos_val = float(doy_sincos[0]), float(doy_sincos[1])
+    sin_val, cos_val = float(phase[0]), float(phase[1])
     base_doy = math.atan2(sin_val, cos_val) * (365.0 / (2.0 * math.pi))
     if base_doy < 0:
         base_doy += 365.0
@@ -123,14 +153,18 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
 
             # Autoregressive update
             next_norm = history[-1] + delta
-            history.append(next_norm)
 
             # De-normalize to physical units
             next_phys = next_norm * CH_STD + CH_MEAN
 
             # Physical guards per API Contract
             next_phys[1] = np.clip(next_phys[1], 0.0, None)         # rain >= 0
-            next_phys[0] = np.clip(next_phys[0], 233.15, 333.15)    # -40C to 60C
+            next_phys[0] = np.clip(next_phys[0], TEMP_MIN, TEMP_MAX)
+            if not np.isfinite(next_phys).all():
+                raise FloatingPointError(f"Model produced a non-finite forecast at lead {step + 1}.")
+
+            next_norm = (next_phys - CH_MEAN) / CH_STD
+            history.append(next_norm)
 
             forecasts.append(next_phys)
 
@@ -146,12 +180,35 @@ def health():
 async def simulate_endpoint(request: Request):
     import time
     t0 = time.perf_counter()
-    body = await request.json()
-    
-    init = _arr(body["init_states"])
-    pert = None if body.get("perturbation") is None else _arr(body["perturbation"])
-    
-    out = simulate(init, body["doy_sincos"], int(body["steps"]), pert)
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON.") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Request body must be a JSON object.")
+
+    required = ("init_states", "doy_sincos", "steps")
+    missing = [key for key in required if key not in body]
+    if missing:
+        raise HTTPException(status_code=422, detail=f"Missing required fields: {', '.join(missing)}.")
+    steps = body["steps"]
+    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 30:
+        raise HTTPException(status_code=422, detail="steps must be an integer between 1 and 30.")
+    try:
+        init = _arr(body["init_states"], (3, 6, 32, 36), "init_states")
+        phase = np.asarray(body["doy_sincos"], dtype=np.float64)
+        if phase.shape != (2,) or not np.isfinite(phase).all() or np.hypot(*phase) < 1e-8:
+            raise ValueError("doy_sincos must contain two finite values defining a non-zero phase.")
+        pert = (
+            None
+            if body.get("perturbation") is None
+            else _arr(body["perturbation"], (6, 32, 36), "perturbation")
+        )
+        out = simulate(init, phase, steps, pert)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FloatingPointError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     
     return {
         "rollout": np.asarray(out, dtype="f4").tolist(),

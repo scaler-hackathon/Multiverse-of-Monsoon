@@ -1,0 +1,376 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+4 0 obj
+<< /Length 5184 >>
+stream
+0.930 0.960 0.980 rg 0 0 595 842 re f
+0.055 0.110 0.200 rg 0 712 595 130 re f
+0.450 0.840 0.780 rg BT /F2 10 Tf 1 0 0 1 42 789 Tm (CODE BLOODED  /  VARSHA) Tj ET
+1.000 1.000 1.000 rg BT /F2 25 Tf 1 0 0 1 42 751 Tm (Multiverse of Monsoon) Tj ET
+0.820 0.880 0.940 rg BT /F1 10 Tf 1 0 0 1 42 724 Tm (MODEL DESIGN  |  AUTOREGRESSIVE ROLLOUT, STABILITY, VALIDATION) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 42 28 Tm (Offline-first climate simulation | India 32 x 36 daily grid) Tj ET
+0.090 0.390 0.720 rg BT /F2 8 Tf 1 0 0 1 541 28 Tm (1 / 2) Tj ET
+0.090 0.390 0.720 rg 42 684 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 687 Tm (A LEARNED DAILY STATE TRANSITION) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 665 Tm (VARSHA is a compact residual convolutional model. It receives three consecutive physical weather) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (states normalized with the kit statistics, two bundled geography fields, and day-of-year) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (sine/cosine planes. A four-block residual CNN predicts a normalized next-day change; the server) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (applies that change and feeds the new state back for the next forecast day.) Tj ET
+1.000 1.000 1.000 rg 42 521 119 82 re f
+0.090 0.390 0.720 rg 42 599 119 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 579 Tm (01  CONTEXT) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 54 560 Tm (3 days x 6 channels) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 54 549 Tm (Physical-unit API) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 54 538 Tm (input) Tj ET
+1.000 1.000 1.000 rg 171 521 119 82 re f
+0.030 0.550 0.520 rg 171 599 119 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 183 579 Tm (02  CONDITION) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 183 560 Tm (Static terrain +) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 183 549 Tm (land/sea Seasonal) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 183 538 Tm (sine/cosine) Tj ET
+1.000 1.000 1.000 rg 300 521 119 82 re f
+0.090 0.390 0.720 rg 300 599 119 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 312 579 Tm (03  TRANSITION) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 560 Tm (Residual CNN predicts) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 549 Tm (the next-day increment) Tj ET
+1.000 1.000 1.000 rg 429 521 119 82 re f
+0.030 0.550 0.520 rg 429 599 119 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 441 579 Tm (04  ROLLOUT) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 441 560 Tm (Guard rain and) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 441 549 Tm (temperature; recycle) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 441 538 Tm (state autoregressively) Tj ET
+0.090 0.390 0.720 rg 42 489 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 492 Tm (DRIFT CONTROLS AND KNOWN FAILURE MODES) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 469 Tm (Channel normalization, the three-day context, seasonal phase, static geography, finite-value) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 457 Tm (checks, a nonnegative-rain floor, and -40 C to +60 C temperature bounds protect the rollout from) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 445 Tm (common numerical failures. Training now includes multi-day autoregressive loss, so later model) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 433 Tm (inputs include the model's own predictions. These are engineering guards, not conservation laws.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 397 Tm (Limits: deterministic 1-degree daily fields cannot resolve local storms or sub-daily extremes.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 385 Tm (Error compounds with lead time; rainfall and climate trends can be misrepresented. The 2005-2021) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 373 Tm (data cannot establish skill on the hidden 2023-2024 cases. Rain, flood, and wind-energy indicators) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 361 Tm (are screening proxies, not operational warnings or calibrated impact forecasts.) Tj ET
+0.090 0.390 0.720 rg 42 319 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 322 Tm (TEMPORAL HOLDOUT DIAGNOSTICS) Tj ET
+1.000 1.000 1.000 rg 42 180 511 118 re f
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 275 Tm (Held-out 2021, 71 windows: +1d mean skill +22%; rain CSI 0.50; +4d mean skill +6%; rain CSI 0.30; +8d) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 262 Tm (mean skill -6%; rain CSI 0.28. Day-8 spatial variance ratios range 0.66-0.99. This is an in-sample-era) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 249 Tm (temporal holdout, not proof of hidden 2023-24 skill.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 216 Tm (Evaluation compares identical 2021 target windows against both persistence and training-period day-of-) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 204 Tm (year climatology, with latitude-weighted RMSE and a 10 mm/day heavy-rain CSI. Check) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 192 Tm (validation_metrics.json and rerun the documented command whenever model weights change.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 13389 >>
+stream
+0.930 0.960 0.980 rg 0 0 595 842 re f
+0.055 0.110 0.200 rg 0 712 595 130 re f
+0.450 0.840 0.780 rg BT /F2 10 Tf 1 0 0 1 42 789 Tm (CODE BLOODED  /  VARSHA) Tj ET
+1.000 1.000 1.000 rg BT /F2 25 Tf 1 0 0 1 42 751 Tm (Multiverse of Monsoon) Tj ET
+0.820 0.880 0.940 rg BT /F1 10 Tf 1 0 0 1 42 724 Tm (LIVE VISUALIZATION  |  COUNTERFACTUAL SHOCKS  |  IMPACT SCREENING) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 42 28 Tm (Offline-first climate simulation | India 32 x 36 daily grid) Tj ET
+0.090 0.390 0.720 rg BT /F2 8 Tf 1 0 0 1 541 28 Tm (2 / 2) Tj ET
+0.090 0.390 0.720 rg 42 684 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 687 Tm (A LIVE, LOCAL MULTIVERSE) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 665 Tm (The separate Streamlit dashboard selects a real three-day state window from the team-kit NetCDF,) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 652 Tm (sends it to the local simulation API, and plots the returned 32 x 36 fields. The comparison map is) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 639 Tm (the shocked rollout minus the unperturbed rollout for the same initialization. Nothing is pre-) Tj ET
+0.100 0.160 0.240 rg BT /F1 9 Tf 1 0 0 1 42 626 Tm (rendered and no remote weather service is contacted.) Tj ET
+0.150 0.420 0.840 rg 48 475 11 11 re f
+0.174 0.427 0.820 rg 60 475 11 11 re f
+0.197 0.434 0.800 rg 72 475 11 11 re f
+0.221 0.441 0.780 rg 84 475 11 11 re f
+0.244 0.448 0.760 rg 96 475 11 11 re f
+0.268 0.455 0.740 rg 108 475 11 11 re f
+0.291 0.462 0.720 rg 120 475 11 11 re f
+0.315 0.469 0.700 rg 132 475 11 11 re f
+0.338 0.476 0.680 rg 144 475 11 11 re f
+0.362 0.484 0.660 rg 156 475 11 11 re f
+0.385 0.491 0.640 rg 168 475 11 11 re f
+0.409 0.498 0.620 rg 180 475 11 11 re f
+0.432 0.505 0.600 rg 192 475 11 11 re f
+0.456 0.512 0.580 rg 204 475 11 11 re f
+0.479 0.519 0.560 rg 216 475 11 11 re f
+0.503 0.526 0.540 rg 228 475 11 11 re f
+0.526 0.533 0.520 rg 240 475 11 11 re f
+0.550 0.540 0.500 rg 252 475 11 11 re f
+0.183 0.430 0.812 rg 48 463 11 11 re f
+0.207 0.437 0.792 rg 60 463 11 11 re f
+0.230 0.444 0.772 rg 72 463 11 11 re f
+0.254 0.451 0.752 rg 84 463 11 11 re f
+0.277 0.458 0.732 rg 96 463 11 11 re f
+0.301 0.465 0.712 rg 108 463 11 11 re f
+0.325 0.472 0.692 rg 120 463 11 11 re f
+0.348 0.479 0.672 rg 132 463 11 11 re f
+0.372 0.486 0.652 rg 144 463 11 11 re f
+0.395 0.494 0.632 rg 156 463 11 11 re f
+0.419 0.501 0.612 rg 168 463 11 11 re f
+0.442 0.508 0.592 rg 180 463 11 11 re f
+0.466 0.515 0.572 rg 192 463 11 11 re f
+0.489 0.522 0.552 rg 204 463 11 11 re f
+0.513 0.529 0.532 rg 216 463 11 11 re f
+0.536 0.536 0.512 rg 228 463 11 11 re f
+0.560 0.537 0.492 rg 240 463 11 11 re f
+0.583 0.530 0.472 rg 252 463 11 11 re f
+0.217 0.440 0.783 rg 48 451 11 11 re f
+0.240 0.447 0.763 rg 60 451 11 11 re f
+0.264 0.454 0.743 rg 72 451 11 11 re f
+0.287 0.461 0.723 rg 84 451 11 11 re f
+0.311 0.468 0.703 rg 96 451 11 11 re f
+0.334 0.475 0.683 rg 108 451 11 11 re f
+0.358 0.482 0.663 rg 120 451 11 11 re f
+0.381 0.489 0.643 rg 132 451 11 11 re f
+0.405 0.496 0.623 rg 144 451 11 11 re f
+0.428 0.504 0.603 rg 156 451 11 11 re f
+0.452 0.511 0.583 rg 168 451 11 11 re f
+0.475 0.518 0.563 rg 180 451 11 11 re f
+0.499 0.525 0.543 rg 192 451 11 11 re f
+0.523 0.532 0.523 rg 204 451 11 11 re f
+0.546 0.539 0.503 rg 216 451 11 11 re f
+0.570 0.534 0.483 rg 228 451 11 11 re f
+0.593 0.527 0.463 rg 240 451 11 11 re f
+0.617 0.520 0.443 rg 252 451 11 11 re f
+0.250 0.450 0.755 rg 48 439 11 11 re f
+0.274 0.457 0.735 rg 60 439 11 11 re f
+0.297 0.464 0.715 rg 72 439 11 11 re f
+0.321 0.471 0.695 rg 84 439 11 11 re f
+0.344 0.478 0.675 rg 96 439 11 11 re f
+0.368 0.485 0.655 rg 108 439 11 11 re f
+0.391 0.492 0.635 rg 120 439 11 11 re f
+0.415 0.499 0.615 rg 132 439 11 11 re f
+0.438 0.506 0.595 rg 144 439 11 11 re f
+0.462 0.514 0.575 rg 156 439 11 11 re f
+0.485 0.521 0.555 rg 168 439 11 11 re f
+0.509 0.528 0.535 rg 180 439 11 11 re f
+0.532 0.535 0.515 rg 192 439 11 11 re f
+0.556 0.538 0.495 rg 204 439 11 11 re f
+0.579 0.531 0.475 rg 216 439 11 11 re f
+0.603 0.524 0.455 rg 228 439 11 11 re f
+0.626 0.517 0.435 rg 240 439 11 11 re f
+0.650 0.510 0.415 rg 252 439 11 11 re f
+0.283 0.460 0.727 rg 48 427 11 11 re f
+0.307 0.467 0.707 rg 60 427 11 11 re f
+0.330 0.474 0.687 rg 72 427 11 11 re f
+0.354 0.481 0.667 rg 84 427 11 11 re f
+0.377 0.488 0.647 rg 96 427 11 11 re f
+0.401 0.495 0.627 rg 108 427 11 11 re f
+0.425 0.502 0.607 rg 120 427 11 11 re f
+0.448 0.509 0.587 rg 132 427 11 11 re f
+0.472 0.516 0.567 rg 144 427 11 11 re f
+0.495 0.524 0.547 rg 156 427 11 11 re f
+0.519 0.531 0.527 rg 168 427 11 11 re f
+0.542 0.538 0.507 rg 180 427 11 11 re f
+0.566 0.535 0.487 rg 192 427 11 11 re f
+0.589 0.528 0.467 rg 204 427 11 11 re f
+0.613 0.521 0.447 rg 216 427 11 11 re f
+0.636 0.514 0.427 rg 228 427 11 11 re f
+0.660 0.507 0.407 rg 240 427 11 11 re f
+0.683 0.500 0.387 rg 252 427 11 11 re f
+0.317 0.470 0.698 rg 48 415 11 11 re f
+0.340 0.477 0.678 rg 60 415 11 11 re f
+0.364 0.484 0.658 rg 72 415 11 11 re f
+0.387 0.491 0.638 rg 84 415 11 11 re f
+0.411 0.498 0.618 rg 96 415 11 11 re f
+0.434 0.505 0.598 rg 108 415 11 11 re f
+0.458 0.512 0.578 rg 120 415 11 11 re f
+0.481 0.519 0.558 rg 132 415 11 11 re f
+0.505 0.526 0.538 rg 144 415 11 11 re f
+0.528 0.534 0.518 rg 156 415 11 11 re f
+0.552 0.539 0.498 rg 168 415 11 11 re f
+0.575 0.532 0.478 rg 180 415 11 11 re f
+0.599 0.525 0.458 rg 192 415 11 11 re f
+0.623 0.518 0.438 rg 204 415 11 11 re f
+0.646 0.511 0.418 rg 216 415 11 11 re f
+0.670 0.504 0.398 rg 228 415 11 11 re f
+0.693 0.497 0.378 rg 240 415 11 11 re f
+0.717 0.490 0.358 rg 252 415 11 11 re f
+0.350 0.480 0.670 rg 48 403 11 11 re f
+0.374 0.487 0.650 rg 60 403 11 11 re f
+0.397 0.494 0.630 rg 72 403 11 11 re f
+0.421 0.501 0.610 rg 84 403 11 11 re f
+0.444 0.508 0.590 rg 96 403 11 11 re f
+0.468 0.515 0.570 rg 108 403 11 11 re f
+0.491 0.522 0.550 rg 120 403 11 11 re f
+0.515 0.529 0.530 rg 132 403 11 11 re f
+0.538 0.536 0.510 rg 144 403 11 11 re f
+0.562 0.536 0.490 rg 156 403 11 11 re f
+0.585 0.529 0.470 rg 168 403 11 11 re f
+0.609 0.522 0.450 rg 180 403 11 11 re f
+0.632 0.515 0.430 rg 192 403 11 11 re f
+0.656 0.508 0.410 rg 204 403 11 11 re f
+0.679 0.501 0.390 rg 216 403 11 11 re f
+0.703 0.494 0.370 rg 228 403 11 11 re f
+0.726 0.487 0.350 rg 240 403 11 11 re f
+0.750 0.480 0.330 rg 252 403 11 11 re f
+0.383 0.490 0.642 rg 48 391 11 11 re f
+0.407 0.497 0.622 rg 60 391 11 11 re f
+0.430 0.504 0.602 rg 72 391 11 11 re f
+0.454 0.511 0.582 rg 84 391 11 11 re f
+0.477 0.518 0.562 rg 96 391 11 11 re f
+0.501 0.525 0.542 rg 108 391 11 11 re f
+0.525 0.532 0.522 rg 120 391 11 11 re f
+0.548 0.539 0.502 rg 132 391 11 11 re f
+0.572 0.534 0.482 rg 144 391 11 11 re f
+0.595 0.526 0.462 rg 156 391 11 11 re f
+0.619 0.519 0.442 rg 168 391 11 11 re f
+0.642 0.512 0.422 rg 180 391 11 11 re f
+0.666 0.505 0.402 rg 192 391 11 11 re f
+0.689 0.498 0.382 rg 204 391 11 11 re f
+0.713 0.491 0.362 rg 216 391 11 11 re f
+0.736 0.484 0.342 rg 228 391 11 11 re f
+0.760 0.477 0.322 rg 240 391 11 11 re f
+0.783 0.470 0.302 rg 252 391 11 11 re f
+0.417 0.500 0.613 rg 48 379 11 11 re f
+0.440 0.507 0.593 rg 60 379 11 11 re f
+0.464 0.514 0.573 rg 72 379 11 11 re f
+0.487 0.521 0.553 rg 84 379 11 11 re f
+0.511 0.528 0.533 rg 96 379 11 11 re f
+0.534 0.535 0.513 rg 108 379 11 11 re f
+0.558 0.538 0.493 rg 120 379 11 11 re f
+0.581 0.531 0.473 rg 132 379 11 11 re f
+0.605 0.524 0.453 rg 144 379 11 11 re f
+0.628 0.516 0.433 rg 156 379 11 11 re f
+0.652 0.509 0.413 rg 168 379 11 11 re f
+0.675 0.502 0.393 rg 180 379 11 11 re f
+0.699 0.495 0.373 rg 192 379 11 11 re f
+0.723 0.488 0.353 rg 204 379 11 11 re f
+0.746 0.481 0.333 rg 216 379 11 11 re f
+0.770 0.474 0.313 rg 228 379 11 11 re f
+0.793 0.467 0.293 rg 240 379 11 11 re f
+0.817 0.460 0.273 rg 252 379 11 11 re f
+0.450 0.510 0.585 rg 48 367 11 11 re f
+0.474 0.517 0.565 rg 60 367 11 11 re f
+0.497 0.524 0.545 rg 72 367 11 11 re f
+0.521 0.531 0.525 rg 84 367 11 11 re f
+0.544 0.538 0.505 rg 96 367 11 11 re f
+0.568 0.535 0.485 rg 108 367 11 11 re f
+0.591 0.528 0.465 rg 120 367 11 11 re f
+0.615 0.521 0.445 rg 132 367 11 11 re f
+0.638 0.514 0.425 rg 144 367 11 11 re f
+0.662 0.506 0.405 rg 156 367 11 11 re f
+0.685 0.499 0.385 rg 168 367 11 11 re f
+0.709 0.492 0.365 rg 180 367 11 11 re f
+0.732 0.485 0.345 rg 192 367 11 11 re f
+0.756 0.478 0.325 rg 204 367 11 11 re f
+0.779 0.471 0.305 rg 216 367 11 11 re f
+0.803 0.464 0.285 rg 228 367 11 11 re f
+0.826 0.457 0.265 rg 240 367 11 11 re f
+0.850 0.450 0.245 rg 252 367 11 11 re f
+0.483 0.520 0.557 rg 48 355 11 11 re f
+0.507 0.527 0.537 rg 60 355 11 11 re f
+0.530 0.534 0.517 rg 72 355 11 11 re f
+0.554 0.539 0.497 rg 84 355 11 11 re f
+0.577 0.532 0.477 rg 96 355 11 11 re f
+0.601 0.525 0.457 rg 108 355 11 11 re f
+0.625 0.518 0.437 rg 120 355 11 11 re f
+0.648 0.511 0.417 rg 132 355 11 11 re f
+0.672 0.504 0.397 rg 144 355 11 11 re f
+0.695 0.496 0.377 rg 156 355 11 11 re f
+0.719 0.489 0.357 rg 168 355 11 11 re f
+0.742 0.482 0.337 rg 180 355 11 11 re f
+0.766 0.475 0.317 rg 192 355 11 11 re f
+0.789 0.468 0.297 rg 204 355 11 11 re f
+0.813 0.461 0.277 rg 216 355 11 11 re f
+0.836 0.454 0.257 rg 228 355 11 11 re f
+0.860 0.447 0.237 rg 240 355 11 11 re f
+0.883 0.440 0.217 rg 252 355 11 11 re f
+0.517 0.530 0.528 rg 48 343 11 11 re f
+0.540 0.537 0.508 rg 60 343 11 11 re f
+0.564 0.536 0.488 rg 72 343 11 11 re f
+0.587 0.529 0.468 rg 84 343 11 11 re f
+0.611 0.522 0.448 rg 96 343 11 11 re f
+0.634 0.515 0.428 rg 108 343 11 11 re f
+0.658 0.508 0.408 rg 120 343 11 11 re f
+0.681 0.501 0.388 rg 132 343 11 11 re f
+0.705 0.494 0.368 rg 144 343 11 11 re f
+0.728 0.486 0.348 rg 156 343 11 11 re f
+0.752 0.479 0.328 rg 168 343 11 11 re f
+0.775 0.472 0.308 rg 180 343 11 11 re f
+0.799 0.465 0.288 rg 192 343 11 11 re f
+0.823 0.458 0.268 rg 204 343 11 11 re f
+0.846 0.451 0.248 rg 216 343 11 11 re f
+0.870 0.444 0.228 rg 228 343 11 11 re f
+0.893 0.437 0.208 rg 240 343 11 11 re f
+0.917 0.430 0.188 rg 252 343 11 11 re f
+0.550 0.540 0.500 rg 48 331 11 11 re f
+0.574 0.533 0.480 rg 60 331 11 11 re f
+0.597 0.526 0.460 rg 72 331 11 11 re f
+0.621 0.519 0.440 rg 84 331 11 11 re f
+0.644 0.512 0.420 rg 96 331 11 11 re f
+0.668 0.505 0.400 rg 108 331 11 11 re f
+0.691 0.498 0.380 rg 120 331 11 11 re f
+0.715 0.491 0.360 rg 132 331 11 11 re f
+0.738 0.484 0.340 rg 144 331 11 11 re f
+0.762 0.476 0.320 rg 156 331 11 11 re f
+0.785 0.469 0.300 rg 168 331 11 11 re f
+0.809 0.462 0.280 rg 180 331 11 11 re f
+0.832 0.455 0.260 rg 192 331 11 11 re f
+0.856 0.448 0.240 rg 204 331 11 11 re f
+0.879 0.441 0.220 rg 216 331 11 11 re f
+0.903 0.434 0.200 rg 228 331 11 11 re f
+0.926 0.427 0.180 rg 240 331 11 11 re f
+0.950 0.420 0.160 rg 252 331 11 11 re f
+0.340 0.400 0.490 rg BT /F1 7.5 Tf 1 0 0 1 48 295 Tm (Illustrative grid layout; dashboard maps are generated live.) Tj ET
+1.000 1.000 1.000 rg 300 377 253 95 re f
+0.030 0.550 0.520 rg 300 468 253 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 312 448 Tm (PHYSICAL SHOCKS) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 429 Tm (Warm Bay: +3 K and +15% TCWV in the kit box.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 418 Tm (Arabian Sea stall: -40% u10 and v10. Zero shock) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 407 Tm (is an exact identity check.) Tj ET
+1.000 1.000 1.000 rg 300 267 253 95 re f
+0.090 0.390 0.720 rg 300 358 253 4 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 312 338 Tm (IMPACT SCREEN) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 319 Tm (Live rainfall-deficit days, heavy-rain) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 308 Tm (coverage, peak rain, and a relative wind-speed-) Tj ET
+0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 312 297 Tm (cubed index.) Tj ET
+0.090 0.390 0.720 rg 42 265 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 268 Tm (IMPACT USE CASE: MONSOON STRESS AWARENESS) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 245 Tm (A stalled monsoon scenario can expose how a short-range rainfall deficit changes across the) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 233 Tm (central-India grid. The dashboard reports broad-area mean rain and deficit days alongside a heavy-) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 221 Tm (rain screen, so a viewer can compare the baseline and alternate branch before discussing crop-) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 42 209 Tm (water stress or flood preparedness.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 190 Tm (The indicators are deliberately labeled as screening proxies: there is no crop calendar, soil) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 178 Tm (moisture, irrigation, river routing, exposure data, or turbine calibration in the supplied kit.) Tj ET
+0.340 0.400 0.490 rg BT /F1 8.5 Tf 1 0 0 1 42 166 Tm (They must not be interpreted as yield, flood depth, or electricity forecasts.) Tj ET
+0.090 0.390 0.720 rg 42 117 5 16 re f
+0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 120 Tm (OFFLINE AND REPRODUCIBLE) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.3 Tf 1 0 0 1 42 97 Tm (Inference uses only the bundled model, statistics, and static map. The dashboard restricts API) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.3 Tf 1 0 0 1 42 85 Tm (calls to localhost; no internet or weather API is used. Training reads the kit data locally, while) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.3 Tf 1 0 0 1 42 73 Tm (the repository ships weights rather than a multi-year archive. See README.md for commands and) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.3 Tf 1 0 0 1 42 61 Tm (limitations.) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000160 00000 n 
+0000000223 00000 n 
+0000005458 00000 n 
+0000005594 00000 n 
+0000019035 00000 n 
+0000019171 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+19220
+%%EOF

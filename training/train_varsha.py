@@ -1,13 +1,19 @@
+import argparse
 import json
 import math
+import os
 from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import xarray as xr
+from data_utils import resolve_dataset_path
 
 ROOT = Path(__file__).resolve().parents[1]
+HEIGHT, WIDTH = 32, 36
+
 
 class ResBlock(nn.Module):
     def __init__(self, channels):
@@ -30,102 +36,193 @@ class VarshaNet(nn.Module):
         super().__init__()
         self.in_proj = nn.Sequential(
             nn.Conv2d(in_channels, base_dim, kernel_size=3, padding=1),
-            nn.GELU()
+            nn.GELU(),
         )
         self.blocks = nn.Sequential(
             ResBlock(base_dim),
             ResBlock(base_dim),
             ResBlock(base_dim),
-            ResBlock(base_dim)
+            ResBlock(base_dim),
         )
         self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=3, padding=1)
 
     def forward(self, x):
-        feat = self.in_proj(x)
-        feat = self.blocks(feat)
-        delta = self.out_proj(feat)
-        return delta
+        return self.out_proj(self.blocks(self.in_proj(x)))
 
 
-def get_batch(data_slice, norm_static, batch_size=32):
-    max_idx = len(data_slice) - 4
-    indices = np.random.randint(0, max_idx, size=batch_size)
-    
-    batch_inputs = []
-    batch_targets = []
-    
-    H, W = 32, 36
-    for idx in indices:
-        hist = data_slice[idx : idx + 3].reshape(18, H, W)
-        
-        doy = (idx % 365) + 1
-        sin_doy = math.sin(2 * math.pi * doy / 365.0)
-        cos_doy = math.cos(2 * math.pi * doy / 365.0)
-        doy_planes = np.stack([
-            np.full((H, W), sin_doy, dtype=np.float32),
-            np.full((H, W), cos_doy, dtype=np.float32)
-        ], axis=0)
-        
-        x_in = np.concatenate([hist, norm_static, doy_planes], axis=0)
-        
-        last_day = data_slice[idx + 2]
-        target_day = data_slice[idx + 3]
-        delta_target = target_day - last_day
-        
-        batch_inputs.append(x_in)
-        batch_targets.append(delta_target)
-        
-    return torch.tensor(np.stack(batch_inputs), dtype=torch.float32), torch.tensor(np.stack(batch_targets), dtype=torch.float32)
+def _forecast_doy(last_input_doy, lead):
+    base_doy = ((int(last_input_doy) - 1) % 365) + 1
+    return ((base_doy + int(lead) - 1) % 365) + 1
+
+
+def _rollout_batch(model, histories, targets, input_doys, norm_static, mean, std):
+    batch_size, horizon = targets.shape[:2]
+    device = histories.device
+    static = torch.as_tensor(norm_static, dtype=torch.float32, device=device)
+    static = static.unsqueeze(0).expand(batch_size, -1, -1, -1)
+    mean_t = torch.as_tensor(mean, dtype=torch.float32, device=device)
+    std_t = torch.as_tensor(std, dtype=torch.float32, device=device)
+    rain_floor = -mean_t[1] / std_t[1]
+    temp_min = (233.15 - mean_t[0]) / std_t[0]
+    temp_max = (333.15 - mean_t[0]) / std_t[0]
+    history = [histories[:, day] for day in range(3)]
+    loss = torch.zeros((), dtype=torch.float32, device=device)
+
+    for step in range(horizon):
+        phases = [
+            2.0 * math.pi * _forecast_doy(doy, step + 1) / 365.0
+            for doy in input_doys
+        ]
+        phase_tensor = torch.tensor(
+            [[math.sin(phase), math.cos(phase)] for phase in phases],
+            dtype=torch.float32,
+            device=device,
+        )
+        doy_planes = phase_tensor[:, :, None, None].expand(
+            -1, -1, HEIGHT, WIDTH
+        )
+        dynamic = torch.cat(history[-3:], dim=1)
+        prediction = history[-1] + model(
+            torch.cat((dynamic, static, doy_planes), dim=1)
+        )
+        physical = prediction * std_t[None, :, None, None] + mean_t[None, :, None, None]
+        guarded = torch.cat(
+            (
+                physical[:, :1].clamp(233.15, 333.15),
+                physical[:, 1:2].clamp_min(0.0),
+                physical[:, 2:],
+            ),
+            dim=1,
+        )
+        next_state = (
+            guarded - mean_t[None, :, None, None]
+        ) / std_t[None, :, None, None]
+        loss = loss + nn.functional.mse_loss(next_state, targets[:, step])
+        history.append(next_state)
+
+    return loss / horizon
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Train VARSHA with calendar-aligned rollouts.")
+    parser.add_argument("--steps", type=int, default=1200)
+    parser.add_argument("--rollout-horizon", type=int, default=4)
+    parser.add_argument("--batch-size", type=int, default=12)
+    parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--data", type=Path)
+    parser.add_argument("--output", type=Path, default=ROOT / "varsha_weights.pt")
+    parser.add_argument(
+        "--initial-weights", type=Path, default=ROOT / "varsha_weights.pt"
+    )
+    parser.add_argument("--from-scratch", action="store_true")
+    args = parser.parse_args()
+
+    if args.steps < 1 or not 1 <= args.rollout_horizon <= 8 or args.batch_size < 1:
+        parser.error("steps and batch size must be positive; rollout horizon must be 1..8")
+
+    np.random.seed(args.seed)
+    rng = np.random.default_rng(args.seed)
+    torch.manual_seed(args.seed)
+    torch.set_num_threads(min(4, torch.get_num_threads()))
+
+    data_path = resolve_dataset_path(args.data)
+
+    print("Loading training data and calendar coordinates...")
+    with xr.open_dataset(data_path) as ds:
+        if "data" not in ds or "static" not in ds or "time" not in ds.coords:
+            raise ValueError("Dataset must provide data, static, and time.")
+        raw_data = np.asarray(ds["data"].values, dtype=np.float32)
+        raw_static = np.asarray(ds["static"].values, dtype=np.float32)
+        times = np.asarray(ds.time.values)
+        day_of_year = np.asarray(ds.time.dt.dayofyear.values, dtype=np.int16)
+
+    if raw_data.ndim != 4 or raw_data.shape[1:] != (6, HEIGHT, WIDTH):
+        raise ValueError(f"Unexpected data shape: {raw_data.shape}")
+    if raw_static.shape != (2, HEIGHT, WIDTH):
+        raise ValueError(f"Unexpected static shape: {raw_static.shape}")
+    if not np.isfinite(raw_data).all() or not np.isfinite(raw_static).all():
+        raise ValueError("Training data contains NaN or Inf.")
+
+    with (ROOT / "stats.json").open(encoding="utf-8") as file:
+        stats = json.load(file)
+    mean = np.asarray(stats["mean"], dtype=np.float32)
+    std = np.asarray(stats["std"], dtype=np.float32)
+    if (
+        mean.shape != (6,)
+        or std.shape != (6,)
+        or not np.isfinite(mean).all()
+        or not np.isfinite(std).all()
+        or np.any(std <= 0)
+    ):
+        raise ValueError("stats.json must contain six finite means and positive standard deviations.")
+
+    val_start = int(np.searchsorted(times, np.datetime64("2021-01-01")))
+    if val_start <= 0 or val_start >= len(raw_data):
+        raise ValueError("Could not establish a non-empty training split before 2021.")
+    train_data = (raw_data[:val_start] - mean[None, :, None, None]) / std[
+        None, :, None, None
+    ]
+    norm_static = (raw_static - raw_static.mean(axis=(1, 2), keepdims=True)) / (
+        raw_static.std(axis=(1, 2), keepdims=True) + 1e-6
+    )
+    max_start = len(train_data) - args.rollout_horizon - 2
+    if max_start <= 0:
+        raise ValueError("Training split is shorter than the requested rollout horizon.")
+
+    model = VarshaNet()
+    if args.from_scratch:
+        print("Training from a fresh initialization")
+    elif args.initial_weights.exists():
+        model.load_state_dict(
+            torch.load(args.initial_weights, map_location="cpu", weights_only=True)
+        )
+        print(f"Fine-tuning from {args.initial_weights}")
+    else:
+        raise FileNotFoundError(
+            f"Missing initial checkpoint {args.initial_weights}; pass --from-scratch to start fresh."
+        )
+
+    optimizer = optim.AdamW(
+        model.parameters(), lr=args.learning_rate, weight_decay=1e-4
+    )
+    model.train()
+    for step in range(1, args.steps + 1):
+        indices = rng.integers(0, max_start, size=args.batch_size)
+        histories = torch.from_numpy(
+            np.stack([train_data[i : i + 3] for i in indices])
+        )
+        targets = torch.from_numpy(
+            np.stack(
+                [
+                    train_data[i + 3 : i + 3 + args.rollout_horizon]
+                    for i in indices
+                ]
+            )
+        )
+        input_doys = [int(day_of_year[i + 2]) for i in indices]
+
+        optimizer.zero_grad(set_to_none=True)
+        loss = _rollout_batch(
+            model, histories, targets, input_doys, norm_static, mean, std
+        )
+        if not torch.isfinite(loss):
+            raise FloatingPointError(f"Non-finite training loss at step {step}.")
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+
+        if step == 1 or step % 100 == 0 or step == args.steps:
+            print(f"Step [{step}/{args.steps}] rollout loss: {loss.item():.6f}")
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = args.output.with_name(args.output.name + ".tmp")
+    torch.save(model.state_dict(), temporary_path)
+    os.replace(temporary_path, args.output)
+
+    print(f"Candidate weights saved to {args.output}")
+    print("Validation year 2021 was excluded from training.")
 
 
 if __name__ == "__main__":
-    print("Loading dataset and normalization statistics...")
-    ds = xr.open_dataset(ROOT / "india_climate_train.nc")
-    raw_data = ds["data"].values
-    raw_static = ds["static"].values
-
-    with open(ROOT / "stats.json") as f:
-        stats = json.load(f)
-
-    mean = np.array(stats["mean"], dtype=np.float32).reshape(1, 6, 1, 1)
-    std = np.array(stats["std"], dtype=np.float32).reshape(1, 6, 1, 1)
-
-    norm_data = (raw_data - mean) / std
-
-    static_mean = raw_static.mean(axis=(1, 2), keepdims=True)
-    static_std = raw_static.std(axis=(1, 2), keepdims=True) + 1e-6
-    norm_static = (raw_static - static_mean) / static_std
-
-    val_split = 6209 - 365
-    train_data = norm_data[:val_split]
-    val_data = norm_data[val_split:]
-
-    print(f"Train steps: {len(train_data)}, Val steps: {len(val_data)}")
-
-    model = VarshaNet()
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
-
-    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    criterion = nn.MSELoss()
-
-    print("\nStarting training (fast CPU pass)...")
-    model.train()
-    for step in range(1, 1501):
-        x_batch, y_batch = get_batch(train_data, norm_static, batch_size=32)
-        optimizer.zero_grad()
-        pred_delta = model(x_batch)
-        loss = criterion(pred_delta, y_batch)
-        loss.backward()
-        optimizer.step()
-        
-        if step % 250 == 0:
-            print(f"Step [{step:4d}/1500] - Loss: {loss.item():.5f}")
-
-    output_path = ROOT / "varsha_weights.pt"
-    static_path = ROOT / "static_norm.npy"
-
-    torch.save(model.state_dict(), output_path)
-    np.save(static_path, norm_static)
-
-    print(f"\nModel weights saved to: {output_path}")
-    print(f"Static channel map saved to: {static_path}")
+    main()

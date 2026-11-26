@@ -4,10 +4,11 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
+from data_utils import resolve_dataset_path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-nc_path = ROOT / "india_climate_train.nc"
+nc_path = resolve_dataset_path()
 stats_path = ROOT / "stats.json"
 
 print("\n========== VARSHA DATA INSPECTION ==========\n")

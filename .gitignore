@@ -19,6 +19,17 @@ india_climate_train.nc
 monsoon_r1_kit*.whl
 SHA256SUMS.txt
 
+# Local training and evaluation artifacts
+*_candidate.pt
+*_refined.pt
+*_smoke.pt
+*.pt.tmp
+*.json.tmp
+
+# Streamlit and local validation caches
+.streamlit/
+dashboard/.streamlit/
+
 # OS / Editor Artifacts
 .vscode/
 .idea/
