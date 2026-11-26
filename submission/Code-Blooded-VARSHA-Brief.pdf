@@ -10,7 +10,7 @@ endobj
 << /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
 endobj
 4 0 obj
-<< /Length 5576 >>
+<< /Length 5728 >>
 stream
 0.930 0.960 0.980 rg 0 0 595 842 re f
 0.055 0.110 0.200 rg 0 712 595 130 re f
@@ -63,10 +63,11 @@ stream
 0.090 0.390 0.720 rg 42 319 5 16 re f
 0.055 0.110 0.200 rg BT /F2 10 Tf 1 0 0 1 54 322 Tm (TEMPORAL HOLDOUT DIAGNOSTICS) Tj ET
 1.000 1.000 1.000 rg 42 180 511 118 re f
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 275 Tm (2021 comparison, 71 windows: +1d mean skill +20%; rain CSI 0.46; +4d mean skill +10%; rain CSI 0.34;) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 262 Tm (+8d mean skill +2%; rain CSI 0.31; day-8 rain skill -4%. Day-8 spatial variance ratios range) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 249 Tm (0.74-1.56. Checkpoint metadata records training years excluding 2021. This does not establish skill on) Tj ET
-0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 236 Tm (hidden evaluation cases.) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 275 Tm (2021 comparison, 71 windows: +1d mean-window skill +15%; rain CSI 0.46; +4d mean-window skill +0%;) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 262 Tm (rain CSI 0.34; +8d mean-window skill -5%; rain CSI 0.31; day-8 rain mean-window skill -16%. Per-window) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 249 Tm (day-8 variance spans 0.15-15.99; 31 channel-windows are below and 9 above the anti-blur band.) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 236 Tm (Checkpoint metadata records training years excluding 2021. This does not establish skill on hidden) Tj ET
+0.100 0.160 0.240 rg BT /F1 8.5 Tf 1 0 0 1 56 223 Tm (evaluation cases.) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 216 Tm (Evaluation compares identical holdout-year target windows against both persistence and training-period) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 204 Tm (day-of-year climatology, with latitude-weighted RMSE and a 10 mm/day heavy-rain CSI. Check) Tj ET
 0.340 0.400 0.490 rg BT /F1 8 Tf 1 0 0 1 56 192 Tm (validation_metrics.json and rerun the documented command whenever model weights change.) Tj ET
@@ -369,12 +370,12 @@ xref
 0000000085 00000 n 
 0000000160 00000 n 
 0000000223 00000 n 
-0000005850 00000 n 
-0000005986 00000 n 
-0000019548 00000 n 
-0000019684 00000 n 
+0000006002 00000 n 
+0000006138 00000 n 
+0000019700 00000 n 
+0000019836 00000 n 
 trailer
 << /Size 9 /Root 8 0 R >>
 startxref
-19733
+19885
 %%EOF

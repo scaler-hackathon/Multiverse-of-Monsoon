@@ -9,12 +9,18 @@ from pathlib import Path
 import numpy as np
 import torch
 import xarray as xr
-from data_utils import resolve_dataset_path, year_split_bounds
+
+if __package__:
+    from .data_utils import resolve_dataset_path, year_split_bounds
+else:
+    from data_utils import resolve_dataset_path, year_split_bounds
 
 ROOT = Path(__file__).resolve().parents[1]
 HEIGHT, WIDTH = 32, 36
 LEADS = (1, 4, 8)
 METHODS = ("model", "persistence", "climatology")
+ANTI_BLUR_MIN = 0.4
+ANTI_BLUR_MAX = 2.5
 
 
 def load_validation_data(data_path=None, holdout_year=None):
@@ -67,6 +73,11 @@ def _accumulate(metrics, scores, lead, forecast, truth, weights):
     )
 
 
+def _window_skill(model_rmse, persistence_rmse, climatology_rmse):
+    best_baseline = np.minimum(persistence_rmse, climatology_rmse)
+    return 1.0 - model_rmse / np.maximum(best_baseline, 1e-12)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Compare autoregressive forecasts with aligned persistence and climatology baselines."
@@ -110,6 +121,9 @@ def main(argv=None):
     rain_scores = {
         method: {lead: np.zeros(3, dtype=np.float64) for lead in LEADS}
         for method in METHODS
+    }
+    window_skill_sums = {
+        lead: np.zeros(6, dtype=np.float64) for lead in LEADS
     }
     variance_ratios = []
 
@@ -165,8 +179,20 @@ def main(argv=None):
             }
             if forecasts is not None:
                 forecasts_at_lead["model"] = forecasts[lead - 1]
+            window_rmse = {}
             for name, forecast in forecasts_at_lead.items():
                 _accumulate(sums[name], rain_scores[name], lead, forecast, truth, weights)
+                error = forecast.astype(np.float64) - truth.astype(np.float64)
+                window_rmse[name] = np.sqrt(
+                    np.sum(error * error * weights[None, :, None], axis=(1, 2))
+                    / denominator
+                )
+            if forecasts is not None:
+                window_skill_sums[lead] += _window_skill(
+                    window_rmse["model"],
+                    window_rmse["persistence"],
+                    window_rmse["climatology"],
+                )
 
         if number % 20 == 0 or number == len(windows):
             print(f"Evaluated {number}/{len(windows)} held-out windows")
@@ -217,6 +243,10 @@ def main(argv=None):
             f"{args.holdout_year} scores are only an untouched holdout if they were "
             "not used for candidate selection."
         ),
+        "skill_aggregation_note": (
+            "Both pooled-RMSE skill and arithmetic mean per-window skill are reported; "
+            "the hidden evaluator's aggregation rule is not specified."
+        ),
         "leads": {},
     }
     print(
@@ -263,11 +293,34 @@ def main(argv=None):
             lead_results["skill_vs_best_baseline"] = (
                 1.0 - rmse["model"] / np.maximum(best_baseline, 1e-12)
             ).tolist()
+            mean_window_skill = (
+                window_skill_sums[lead] / len(windows)
+            )
+            lead_results["mean_window_skill_vs_best_baseline"] = (
+                mean_window_skill.tolist()
+            )
+            print(
+                f"  Arithmetic mean per-window skill: "
+                f"{np.mean(mean_window_skill):+.1%}"
+            )
         results["leads"][str(lead)] = lead_results
 
     if variance_ratios:
-        ratios = np.mean(variance_ratios, axis=0)
+        variance_by_window = np.asarray(variance_ratios, dtype=np.float64)
+        ratios = np.mean(variance_by_window, axis=0)
         results["day8_spatial_variance_ratio"] = ratios.tolist()
+        results["day8_spatial_variance_ratio_by_window"] = {
+            channel: {
+                "min": float(np.min(values)),
+                "p10": float(np.quantile(values, 0.1)),
+                "median": float(np.median(values)),
+                "p90": float(np.quantile(values, 0.9)),
+                "max": float(np.max(values)),
+                "below_0.4_count": int(np.count_nonzero(values < ANTI_BLUR_MIN)),
+                "above_2.5_count": int(np.count_nonzero(values > ANTI_BLUR_MAX)),
+            }
+            for channel, values in zip(channels, variance_by_window.T)
+        }
         print("\nDay +8 spatial variance ratio (model / verifying observations):")
         for channel, ratio in zip(channels, ratios):
             print(f"  {channel:5s} {ratio:.3f}")

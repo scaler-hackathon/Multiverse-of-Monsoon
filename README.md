@@ -48,7 +48,7 @@ python .\training\evaluate_varsha.py --holdout-year 2021 --weights .\varsha_cand
 python .\training\evaluate_baseline.py
 ```
 
-Evaluation compares aligned 2021 windows against persistence and day-of-year climatology, reporting latitude-weighted RMSE, heavy-rain CSI, rollout variance and physical-validity checks. A checkpoint trained with Colab’s `--full-train` option has seen 2021, so its 2021 scores are not holdout evidence. Historical scores never guarantee skill on the hidden 2023–24 events; inspect the checkpoint provenance and full report before replacing `varsha_weights.pt`.
+Evaluation compares aligned holdout-year windows against persistence and day-of-year climatology. It reports both pooled-RMSE skill and arithmetic mean per-window skill, plus day-8 variance-ratio ranges and anti-blur band counts, heavy-rain CSI, and physical-validity checks. A checkpoint trained with Colab’s `--full-train` option has seen the holdout year, so those scores are not holdout evidence. The supplied 2021 split was used for candidate selection; results are optimistic validation, not hidden 2023–24 performance guarantees.
 
 For GPU training, upload `colab_train.py`, `india_climate_train.nc`, and `stats.json` to the same mounted Drive folder. Run `python colab_train.py --holdout-year 2021 --smoke` first, then `python colab_train.py --holdout-year 2021 --phase all`. The split is derived from the time axis: the requested year is held out, and the preceding two years are used for validation. Use `--full-train` only for a final refit after model selection; that run includes the holdout year and has no internal validation holdout.
 

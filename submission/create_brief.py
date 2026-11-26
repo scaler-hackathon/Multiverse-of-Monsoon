@@ -86,19 +86,44 @@ def _validation_summary():
     pieces = []
     for lead in ("1", "4", "8"):
         record = leads.get(lead)
-        if not record or "skill_vs_best_baseline" not in record:
+        if not record:
             continue
-        skills = record["skill_vs_best_baseline"]
+        window_skills = record.get("mean_window_skill_vs_best_baseline")
+        if window_skills is not None:
+            skills = window_skills
+            aggregation = "mean-window"
+        elif "skill_vs_best_baseline" in record:
+            skills = record["skill_vs_best_baseline"]
+            aggregation = "pooled"
+        else:
+            continue
         mean_skill = sum(skills) / len(skills)
         csi = record.get("rain_csi_10mm_day", {}).get("model")
         csi_text = f"; rain CSI {csi:.2f}" if csi is not None else ""
-        pieces.append(f"+{lead}d mean skill {mean_skill:+.0%}{csi_text}")
-    ratios = metrics.get("day8_spatial_variance_ratio")
-    spread = (
-        f"Day-8 spatial variance ratios range {min(ratios):.2f}-{max(ratios):.2f}."
-        if ratios
-        else ""
-    )
+        pieces.append(
+            f"+{lead}d {aggregation} skill {mean_skill:+.0%}{csi_text}"
+        )
+    window_variance = metrics.get("day8_spatial_variance_ratio_by_window")
+    if window_variance:
+        minimum = min(value["min"] for value in window_variance.values())
+        maximum = max(value["max"] for value in window_variance.values())
+        below = sum(
+            value["below_0.4_count"] for value in window_variance.values()
+        )
+        above = sum(
+            value["above_2.5_count"] for value in window_variance.values()
+        )
+        spread = (
+            f"Per-window day-8 variance spans {minimum:.2f}-{maximum:.2f}; "
+            f"{below} channel-windows are below and {above} above the anti-blur band."
+        )
+    else:
+        ratios = metrics.get("day8_spatial_variance_ratio")
+        spread = (
+            f"Mean day-8 spatial variance ratios range {min(ratios):.2f}-{max(ratios):.2f}."
+            if ratios
+            else ""
+        )
     if not pieces:
         return "Metrics file has no model results. Re-run the evaluator for the selected checkpoint."
     holdout_year = metrics.get("holdout_year")
@@ -126,9 +151,13 @@ def _validation_summary():
                 provenance = f"Checkpoint metadata records training years excluding {year_label}."
         else:
             provenance = "Checkpoint training-year metadata could not establish holdout independence."
-    rain_skill = leads.get("8", {}).get("skill_vs_best_baseline", [])
+    day8 = leads.get("8", {})
+    rain_skill = day8.get(
+        "mean_window_skill_vs_best_baseline",
+        day8.get("skill_vs_best_baseline", []),
+    )
     if len(rain_skill) > 1:
-        pieces.append(f"day-8 rain skill {rain_skill[1]:+.0%}")
+        pieces.append(f"day-8 rain mean-window skill {rain_skill[1]:+.0%}")
     rain_mode = metrics.get("checkpoint_rain_mode")
     rain_note = (
         " The selected legacy rain head only predicts nonnegative increments."
