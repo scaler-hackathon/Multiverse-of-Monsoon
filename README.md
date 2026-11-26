@@ -43,7 +43,7 @@ python -m monsoon_r1.schema_validator http://127.0.0.1:8000
 Keep the training NetCDF outside the repository. Training scripts accept `--data PATH`; by default they look beside the repository. Both scripts require `--holdout-year` and derive the split from the dataset time-axis years. The example uses 2021, which remains a used-for-selection validation year for this checkpoint. Training writes signed-rain candidate checkpoints without overwriting submitted weights:
 
 ```powershell
-python .\training\train_varsha.py --holdout-year 2021 --steps 1200 --rollout-horizon 8 --batch-size 4 --learning-rate 0.000005 --heavy-rain-weight 3 --heavy-rain-lead-decay 0.25 --late-temperature-weight 1.5 --late-lead-weight 1 --spatial-variance-weight 0.05 --initial-weights .\varsha_weights.pt --output .\varsha_candidate.pt
+python .\training\train_varsha.py --holdout-year 2021 --steps 1200 --rollout-horizon 8 --batch-size 4 --learning-rate 0.000005 --heavy-rain-weight 3 --heavy-rain-lead-decay 0.25 --late-temperature-weight 1.5 --late-lead-weight 1 --spatial-variance-weight 0.2 --initial-weights .\varsha_weights.pt --output .\varsha_candidate.pt
 python .\training\evaluate_varsha.py --holdout-year 2021 --weights .\varsha_candidate.pt --json-out .\submission\validation_metrics.json
 python .\training\evaluate_baseline.py
 ```
