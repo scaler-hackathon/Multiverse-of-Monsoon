@@ -163,8 +163,41 @@ def main(argv=None):
         "checkpoint_training_years": checkpoint_metadata.get(
             "training_years", "unrecorded"
         ),
+        "checkpoint_training_steps": checkpoint_metadata.get(
+            "training_steps", "unrecorded"
+        ),
+        "checkpoint_training_batch_size": checkpoint_metadata.get(
+            "training_batch_size", "unrecorded"
+        ),
+        "checkpoint_rollout_horizon": checkpoint_metadata.get(
+            "rollout_horizon", "unrecorded"
+        ),
+        "checkpoint_learning_rate": checkpoint_metadata.get(
+            "learning_rate", "unrecorded"
+        ),
+        "checkpoint_heavy_rain_weight": checkpoint_metadata.get(
+            "heavy_rain_weight", "unrecorded"
+        ),
+        "checkpoint_late_temperature_weight": checkpoint_metadata.get(
+            "late_temperature_weight", "unrecorded"
+        ),
+        "checkpoint_training_mode": checkpoint_metadata.get(
+            "training_mode", "unrecorded"
+        ),
+        "checkpoint_initial_sha256": checkpoint_metadata.get(
+            "initial_checkpoint_sha256", "unrecorded"
+        ),
+        "checkpoint_climatology_method": checkpoint_metadata.get(
+            "climatology_method", "none"
+        ),
+        "checkpoint_t2m_anomaly_retention": checkpoint_metadata.get(
+            "t2m_anomaly_retention", "none"
+        ),
+        "checkpoint_t2m_anomaly_decay": checkpoint_metadata.get(
+            "t2m_anomaly_decay", "none"
+        ),
         "holdout_provenance_note": (
-            "2021 scores are a valid holdout only if the checkpoint was not trained on 2021."
+            "2021 scores are only an untouched holdout if they were not used for candidate selection."
         ),
         "leads": {},
     }

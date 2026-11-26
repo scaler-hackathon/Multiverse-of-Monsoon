@@ -6,9 +6,9 @@ VARSHA is an offline, autoregressive Indian weather digital twin on the kit’s 
 
 ## Model and safeguards
 
-The six-block, 64-channel 2D ResNet predicts normalized daily increments for six dynamic fields, conditioned on day-of-year sine/cosine planes and two bundled geography fields. `stats.json` handles normalization internally; the API boundary remains in physical units. Each forecast state is autoregressive and clamps precipitation at zero and temperature to the contract range. New checkpoints use signed rainfall increments; legacy checkpoints retain their original head via embedded checkpoint metadata so existing inference behavior is preserved until a candidate is retrained and validated.
+The six-block, 64-channel 2D ResNet predicts normalized daily increments for six dynamic fields, conditioned on day-of-year sine/cosine planes and two bundled geography fields. `stats.json` handles normalization internally; the API boundary remains in physical units. Each forecast state is autoregressive and clamps precipitation at zero and temperature to the contract range. The current checkpoint uses signed rainfall increments and a bundled two-harmonic temperature climatology; lead-decaying anomaly retention reduces long-range temperature drift without shipping a daily lookup table. Legacy checkpoints retain their original rain head and do not use the seasonal correction.
 
-The bundled checkpoint uses signed rainfall increments and was trained on 2005–2020. Candidate selection used the 2021 evaluation metrics in `submission/validation_metrics.json`, so those results are validation—not an untouched test or a guarantee of skill on hidden 2023–24 cases.
+The bundled checkpoint is a 1,200-step CPU fine-tune on 2005–2020, using 8-day rollouts, heavy-rain-weighted loss, and late-lead temperature weighting; it is not the full Colab curriculum. Candidate selection used 2021 metrics in `submission/validation_metrics.json`, so those results are validation—not an untouched test or a guarantee of skill on hidden 2023–24 cases.
 
 The server loads only repository weights and assets. It makes no network requests and uses no future-weather lookup. The dashboard accepts only localhost/loopback HTTP, visualizes live model output, and compares baseline and alternate maps on shared scales. Regional rain, hot-area-days, heavy-rain coverage, and wind-speed-cubed indicators use latitude-weighted grid areas and are screening proxies—not calibrated hazard, crop-yield, or energy forecasts.
 
@@ -43,7 +43,7 @@ python -m monsoon_r1.schema_validator http://127.0.0.1:8000
 Keep the training NetCDF outside the repository. Training scripts accept `--data PATH`; by default they look beside the repository. `train_varsha.py` trains through 2020 and reserves 2021. It writes signed-rain candidate checkpoints without overwriting the submitted weights:
 
 ```powershell
-python .\training\train_varsha.py --steps 1200 --rollout-horizon 8 --batch-size 6 --learning-rate 0.00001 --output .\varsha_candidate.pt
+python .\training\train_varsha.py --steps 1200 --rollout-horizon 8 --batch-size 4 --learning-rate 0.000005 --heavy-rain-weight 3 --late-temperature-weight 1.5 --initial-weights .\varsha_weights.pt --output .\varsha_candidate.pt
 python .\training\evaluate_varsha.py --weights .\varsha_candidate.pt --json-out .\submission\validation_metrics.json
 python .\training\evaluate_baseline.py
 ```

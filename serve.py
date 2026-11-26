@@ -53,6 +53,9 @@ class VarshaNet(nn.Module):
         self.blocks = nn.Sequential(*[ResBlock(base_dim) for _ in range(6)])
         self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=1)  # 1x1 pointwise conv
         self.rain_scale = nn.Parameter(torch.ones(1))
+        self.t2m_climatology_coefficients = None
+        self.t2m_anomaly_retention = 1.0
+        self.t2m_anomaly_decay = 0.0
 
     def forward(self, x):
         feat = self.in_proj(x)
@@ -85,6 +88,27 @@ def load_model_weights(target_model, path):
         raise ValueError(f"Unsupported checkpoint rain_mode: {rain_mode}")
     if not isinstance(state_dict, dict):
         raise ValueError("Checkpoint must contain a model state dictionary.")
+    climatology = metadata.get("t2m_climatology_coefficients")
+    if climatology is None:
+        target_model.t2m_climatology_coefficients = None
+        target_model.t2m_anomaly_retention = 1.0
+        target_model.t2m_anomaly_decay = 0.0
+    else:
+        if not isinstance(climatology, torch.Tensor):
+            raise ValueError("Temperature climatology coefficients must be a tensor.")
+        climatology = climatology.detach().to(device="cpu", dtype=torch.float32)
+        if tuple(climatology.shape) != (5, 32, 36) or not torch.isfinite(climatology).all():
+            raise ValueError("Temperature climatology coefficients must be finite with shape (5, 32, 36).")
+        try:
+            retention = float(metadata["t2m_anomaly_retention"])
+            decay = float(metadata["t2m_anomaly_decay"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("Checkpoint must define finite temperature anomaly blending settings.") from exc
+        if not np.isfinite((retention, decay)).all() or not 0.0 <= retention <= 1.0 or decay < 0.0:
+            raise ValueError("Temperature anomaly blending settings are outside valid ranges.")
+        target_model.t2m_climatology_coefficients = climatology.numpy()
+        target_model.t2m_anomaly_retention = retention
+        target_model.t2m_anomaly_decay = decay
     target_model.rain_mode = rain_mode
     target_model.load_state_dict(state_dict)
     metadata["rain_mode"] = rain_mode
@@ -105,11 +129,12 @@ TEMP_MAX = float(np.float32(333.15))
 model = VarshaNet(in_channels=22, out_channels=6, base_dim=64)
 weights_path = ROOT / "varsha_weights.pt"
 checkpoint_metadata = load_model_weights(model, weights_path)
-MODEL_NAME = (
-    "VARSHA-v2-ResNet64"
-    if model.rain_mode == LEGACY_RAIN_MODE
-    else "VARSHA-v3-ResNet64"
-)
+if model.t2m_climatology_coefficients is not None:
+    MODEL_NAME = "VARSHA-v4-ResNet64-Seasonal"
+elif model.rain_mode == LEGACY_RAIN_MODE:
+    MODEL_NAME = "VARSHA-v2-ResNet64"
+else:
+    MODEL_NAME = "VARSHA-v3-ResNet64"
 model.eval()
 
 
@@ -200,6 +225,28 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
 
             # De-normalize to physical units
             next_phys = next_norm * CH_STD + CH_MEAN
+            climatology = model.t2m_climatology_coefficients
+            if climatology is not None:
+                climate_phase = 2.0 * math.pi * ((curr_doy - 1.0) % 365.0) / 365.0
+                climate_basis = np.asarray(
+                    (
+                        1.0,
+                        math.sin(climate_phase),
+                        math.cos(climate_phase),
+                        math.sin(2.0 * climate_phase),
+                        math.cos(2.0 * climate_phase),
+                    ),
+                    dtype=np.float32,
+                )
+                climate_t2m = np.tensordot(
+                    climate_basis, climatology, axes=(0, 0)
+                )
+                retention = model.t2m_anomaly_retention * math.exp(
+                    -model.t2m_anomaly_decay * step
+                )
+                next_phys[0] = climate_t2m + retention * (
+                    next_phys[0] - climate_t2m
+                )
 
             # Physical guards per API Contract
             next_phys[1] = np.clip(next_phys[1], 0.0, None)         # rain >= 0

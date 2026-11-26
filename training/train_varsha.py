@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -55,6 +56,9 @@ class VarshaNet(nn.Module):
         self.blocks = nn.Sequential(*[ResBlock(base_dim) for _ in range(6)])
         self.out_proj = nn.Conv2d(base_dim, out_channels, kernel_size=1)
         self.rain_scale = nn.Parameter(torch.ones(1))
+        self.t2m_climatology_coefficients = None
+        self.t2m_anomaly_retention = 1.0
+        self.t2m_anomaly_decay = 0.0
 
     def forward(self, x):
         delta = self.out_proj(self.blocks(self.in_proj(x)))
@@ -69,7 +73,42 @@ def _forecast_doy(last_input_doy, lead):
     return ((base_doy + int(lead) - 1) % 365) + 1
 
 
-def _rollout_batch(model, histories, targets, input_doys, norm_static, mean, std):
+def _fit_t2m_harmonic_climatology(data, day_of_year):
+    if (
+        data.ndim != 4
+        or data.shape[1:] != (6, HEIGHT, WIDTH)
+        or day_of_year.shape != (len(data),)
+        or len(data) < 365
+        or not np.isfinite(data[:, 0]).all()
+    ):
+        raise ValueError("Temperature climatology fit received invalid training data.")
+    phase = 2.0 * np.pi * (day_of_year.astype(np.float64) - 1.0) / 365.0
+    design = np.stack(
+        (
+            np.ones_like(phase),
+            np.sin(phase),
+            np.cos(phase),
+            np.sin(2.0 * phase),
+            np.cos(2.0 * phase),
+        ),
+        axis=1,
+    )
+    targets = data[:, 0].reshape(len(data), -1).astype(np.float64)
+    coefficients = np.linalg.lstsq(design, targets, rcond=None)[0]
+    return coefficients.reshape(5, HEIGHT, WIDTH).astype(np.float32)
+
+
+def _rollout_batch(
+    model,
+    histories,
+    targets,
+    input_doys,
+    norm_static,
+    mean,
+    std,
+    heavy_rain_weight,
+    late_temperature_weight,
+):
     batch_size, horizon = targets.shape[:2]
     device = histories.device
     static = torch.as_tensor(norm_static, dtype=torch.float32, device=device)
@@ -83,10 +122,8 @@ def _rollout_batch(model, histories, targets, input_doys, norm_static, mean, std
     loss = torch.zeros((), dtype=torch.float32, device=device)
 
     for step in range(horizon):
-        phases = [
-            2.0 * math.pi * _forecast_doy(doy, step + 1) / 365.0
-            for doy in input_doys
-        ]
+        forecast_doys = [_forecast_doy(doy, step + 1) for doy in input_doys]
+        phases = [2.0 * math.pi * doy / 365.0 for doy in forecast_doys]
         phase_tensor = torch.tensor(
             [[math.sin(phase), math.cos(phase)] for phase in phases],
             dtype=torch.float32,
@@ -99,6 +136,42 @@ def _rollout_batch(model, histories, targets, input_doys, norm_static, mean, std
         prediction = history[-1] + model(
             torch.cat((dynamic, static, doy_planes), dim=1)
         )
+        coefficients = model.t2m_climatology_coefficients
+        if coefficients is not None:
+            climate_phases = [
+                2.0 * math.pi * (doy - 1.0) / 365.0
+                for doy in forecast_doys
+            ]
+            climate_basis = torch.tensor(
+                [
+                    [
+                        1.0,
+                        math.sin(phase),
+                        math.cos(phase),
+                        math.sin(2.0 * phase),
+                        math.cos(2.0 * phase),
+                    ]
+                    for phase in climate_phases
+                ],
+                dtype=torch.float32,
+                device=device,
+            )
+            coefficient_tensor = torch.as_tensor(
+                coefficients, dtype=torch.float32, device=device
+            )
+            climate_t2m = torch.einsum(
+                "bk,khw->bhw", climate_basis, coefficient_tensor
+            )
+            climate_norm = (climate_t2m - mean_t[0]) / std_t[0]
+            retention = model.t2m_anomaly_retention * math.exp(
+                -model.t2m_anomaly_decay * step
+            )
+            predicted_t2m = climate_norm + retention * (
+                prediction[:, 0] - climate_norm
+            )
+            prediction = torch.cat(
+                (predicted_t2m[:, None], prediction[:, 1:]), dim=1
+            )
         physical = prediction * std_t[None, :, None, None] + mean_t[None, :, None, None]
         guarded = torch.cat(
             (
@@ -111,7 +184,15 @@ def _rollout_batch(model, histories, targets, input_doys, norm_static, mean, std
         next_state = (
             guarded - mean_t[None, :, None, None]
         ) / std_t[None, :, None, None]
-        loss = loss + nn.functional.mse_loss(next_state, targets[:, step])
+        squared_error = (next_state - targets[:, step]).square()
+        loss_weights = torch.ones_like(squared_error)
+        target_rain = targets[:, step, 1] * std_t[1] + mean_t[1]
+        loss_weights[:, 1] = 1.0 + heavy_rain_weight * (
+            target_rain >= 10.0
+        ).to(dtype=squared_error.dtype)
+        if step >= horizon // 2:
+            loss_weights[:, 0] = late_temperature_weight
+        loss = loss + (squared_error * loss_weights).mean()
         history.append(next_state)
 
     return loss / horizon
@@ -123,6 +204,8 @@ def main():
     parser.add_argument("--rollout-horizon", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--heavy-rain-weight", type=float, default=3.0)
+    parser.add_argument("--late-temperature-weight", type=float, default=1.5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", type=Path)
     parser.add_argument("--output", type=Path, default=ROOT / "varsha_weights.pt")
@@ -132,7 +215,15 @@ def main():
     parser.add_argument("--from-scratch", action="store_true")
     args = parser.parse_args()
 
-    if args.steps < 1 or not 1 <= args.rollout_horizon <= 8 or args.batch_size < 1:
+    if (
+        args.steps < 1
+        or not 1 <= args.rollout_horizon <= 8
+        or args.batch_size < 1
+        or not math.isfinite(args.heavy_rain_weight)
+        or args.heavy_rain_weight < 0
+        or not math.isfinite(args.late_temperature_weight)
+        or args.late_temperature_weight <= 0
+    ):
         parser.error("steps and batch size must be positive; rollout horizon must be 1..8")
 
     np.random.seed(args.seed)
@@ -184,10 +275,20 @@ def main():
     if max_start <= 0:
         raise ValueError("Training split is shorter than the requested rollout horizon.")
 
+    t2m_climatology_coefficients = _fit_t2m_harmonic_climatology(
+        raw_data[:val_start], day_of_year[:val_start]
+    )
     model = VarshaNet()
+    model.t2m_climatology_coefficients = t2m_climatology_coefficients
+    model.t2m_anomaly_retention = 0.92
+    model.t2m_anomaly_decay = 0.18
+    initial_checkpoint_sha256 = None
     if args.from_scratch:
         print("Training from a fresh initialization")
     elif args.initial_weights.exists():
+        initial_checkpoint_sha256 = hashlib.sha256(
+            args.initial_weights.read_bytes()
+        ).hexdigest()
         checkpoint = torch.load(
             args.initial_weights, map_location="cpu", weights_only=True
         )
@@ -229,7 +330,15 @@ def main():
 
         optimizer.zero_grad(set_to_none=True)
         loss = _rollout_batch(
-            model, histories, targets, input_doys, norm_static, mean, std
+            model,
+            histories,
+            targets,
+            input_doys,
+            norm_static,
+            mean,
+            std,
+            args.heavy_rain_weight,
+            args.late_temperature_weight,
         )
         if not torch.isfinite(loss):
             raise FloatingPointError(f"Non-finite training loss at step {step}.")
@@ -253,6 +362,20 @@ def main():
             "validation_year": str(
                 np.datetime_as_string(times[val_start], unit="Y")
             ),
+            "training_steps": int(args.steps),
+            "training_batch_size": int(args.batch_size),
+            "rollout_horizon": int(args.rollout_horizon),
+            "learning_rate": float(args.learning_rate),
+            "heavy_rain_weight": float(args.heavy_rain_weight),
+            "late_temperature_weight": float(args.late_temperature_weight),
+            "training_mode": "from_scratch" if args.from_scratch else "fine_tune",
+            "initial_checkpoint_sha256": initial_checkpoint_sha256,
+            "t2m_climatology_coefficients": torch.from_numpy(
+                t2m_climatology_coefficients
+            ),
+            "t2m_anomaly_retention": model.t2m_anomaly_retention,
+            "t2m_anomaly_decay": model.t2m_anomaly_decay,
+            "climatology_method": "two_harmonic_t2m",
         },
         temporary_path,
     )

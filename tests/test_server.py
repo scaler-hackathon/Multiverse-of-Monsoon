@@ -81,6 +81,46 @@ class InferenceEdgeCaseTests(unittest.TestCase):
         self.assertEqual(target.rain_mode, serve.SIGNED_RAIN_MODE)
         self.assertEqual(metadata["training_years"], [2005, 2018])
 
+    def test_temperature_climatology_metadata_anchors_forecasts(self):
+        coefficients = torch.zeros((5, 32, 36), dtype=torch.float32)
+        coefficients[0].fill_(300.0)
+        checkpoint = {
+            "state_dict": serve.model.state_dict(),
+            "rain_mode": serve.SIGNED_RAIN_MODE,
+            "t2m_climatology_coefficients": coefficients,
+            "t2m_anomaly_retention": 0.0,
+            "t2m_anomaly_decay": 0.18,
+        }
+        initial = np.zeros((3, 6, 32, 36), dtype=np.float32)
+        initial[:, 0] = 290.0
+        initial[:, 1] = 5.0
+        zero_delta = torch.zeros((1, 6, 32, 36), dtype=torch.float32)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "climatology.pt"
+            torch.save(checkpoint, path)
+            try:
+                serve.load_model_weights(serve.model, path)
+                with patch.object(serve.model, "forward", return_value=zero_delta):
+                    forecast = serve.simulate(initial, self.phase, 2, None)
+                np.testing.assert_allclose(forecast[:, 0], 300.0)
+            finally:
+                serve.load_model_weights(serve.model, serve.weights_path)
+
+    def test_invalid_temperature_climatology_metadata_is_rejected(self):
+        checkpoint = {
+            "state_dict": serve.model.state_dict(),
+            "rain_mode": serve.SIGNED_RAIN_MODE,
+            "t2m_climatology_coefficients": torch.zeros((4, 32, 36)),
+            "t2m_anomaly_retention": 0.9,
+            "t2m_anomaly_decay": 0.18,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-climatology.pt"
+            torch.save(checkpoint, path)
+            with self.assertRaises(ValueError):
+                serve.load_model_weights(serve.VarshaNet(), path)
+
     def test_signed_rain_forecast_can_fall_without_becoming_negative(self):
         initial = np.zeros((3, 6, 32, 36), dtype=np.float32)
         initial[:, 0] = 290.0
