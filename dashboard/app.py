@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+with (ROOT / "stats.json").open(encoding="utf-8") as stats_file:
+    CHANNEL_STD = np.asarray(json.load(stats_file)["std"], dtype=np.float64)
+if CHANNEL_STD.shape != (6,) or not np.isfinite(CHANNEL_STD).all() or np.any(CHANNEL_STD <= 0):
+    raise ValueError("stats.json must define six finite, positive channel standard deviations.")
+
 from dashboard.logic import (
     CHANNELS,
     SCENARIOS,
@@ -326,6 +331,9 @@ if upload is not None or DATA_PATH.is_file():
                 "input_state": initial_states[-1],
                 "latitudes": latitudes,
                 "longitudes": longitudes,
+                "perturbation": (
+                    None if perturbation is None else perturbation.copy()
+                ),
                 "selection_key": selection_key,
             }
         except (requests.RequestException, ValueError, TypeError) as exc:
@@ -336,12 +344,6 @@ if result is not None:
     forecast = result["scenario"]
     baseline = result["baseline"]
     step_data = forecast[lead - 1]
-    (
-        response_map,
-        response_mean,
-        response_rms,
-        response_peak,
-    ) = response_diagnostics(baseline, forecast, channel_index)
     counterfactual = step_data - baseline[lead - 1]
     metric_grid = step_data[channel_index]
     impacts = impact_summary(
@@ -452,24 +454,84 @@ if result is not None:
         )
 
     with response_tab:
-        if result["scenario_name"] == SCENARIOS[0]:
+        perturbation = result["perturbation"]
+        active_channels = (
+            np.flatnonzero(np.any(perturbation != 0, axis=(1, 2)))
+            if perturbation is not None
+            else np.array([], dtype=np.int64)
+        )
+        has_shock = bool(active_channels.size)
+        response_default = (
+            int(active_channels[0]) if has_shock else channel_index
+        )
+        response_label = st.selectbox(
+            "Response field",
+            tuple(channels),
+            index=response_default,
+            help="Defaults to a variable changed by the shock. The chart below also shows response strength for every channel.",
+        )
+        response_channel_index, response_units = channels[response_label]
+        (
+            response_map,
+            response_mean,
+            response_rms,
+            response_peak,
+        ) = response_diagnostics(
+            baseline, forecast, response_channel_index
+        )
+        all_channel_rms = np.sqrt(
+            np.mean(
+                (forecast.astype(np.float64) - baseline.astype(np.float64)) ** 2,
+                axis=(2, 3),
+            )
+        )
+        standardized_rms = all_channel_rms / CHANNEL_STD[None, :]
+        maximum_response = float(standardized_rms.max())
+
+        if not has_shock:
             st.info(
-                "Timeline Prime is the unperturbed control, so its response is zero. "
-                "Choose a nonzero shock in the sidebar and click Run simulation."
+                "No nonzero shock was applied, so a zero response is expected. "
+                "Choose a shock scenario and run it to compare alternate weather."
             )
-        elif result["scenario_name"] == SCENARIOS[3]:
+        elif maximum_response <= 1e-8:
+            st.warning(
+                "The request contained a nonzero shock, but the model produced no "
+                "measurable difference from the control. This is a model response, "
+                "not a plotting scale issue."
+            )
+        else:
+            injected = ", ".join(tuple(channels)[int(index)] for index in active_channels)
             st.success(
-                "Zero perturbation is an identity control; no difference is expected."
+                f"Nonzero shock applied to {injected}. The response is measured against "
+                "the same-input control forecast."
             )
+
+        st.subheader("Response strength through time · all channels")
+        channel_response_chart = pd.DataFrame(
+            {
+                f"{label} (σ)": standardized_rms[:, index]
+                for index, label in enumerate(channels)
+            },
+            index=lead_labels,
+        )
+        st.line_chart(channel_response_chart, height=320)
+        st.caption(
+            "Each curve is the spatial RMS of scenario − baseline, divided by that "
+            "channel's training standard deviation. Zero means no measurable response; "
+            "this scale makes different physical units comparable."
+        )
+
         map_column, details_column = st.columns((3, 2))
         with map_column:
-            st.subheader(f"Scenario − baseline · {selected_label} · day +{lead}")
+            st.subheader(
+                f"Scenario − baseline · {response_label} · day +{lead}"
+            )
             st.html(
                 grid_svg(
                     response_map[lead - 1],
                     result["latitudes"],
                     result["longitudes"],
-                    f"Scenario minus baseline {selected_label}, forecast day plus {lead}",
+                    f"Scenario minus baseline {response_label}, forecast day plus {lead}",
                     diverging=True,
                 )
             )
@@ -478,26 +540,27 @@ if result is not None:
                 "the initial shock changed."
             )
         with details_column:
-            st.subheader("Spatial response through time")
+            st.subheader(f"Response in {response_label}")
             st.line_chart(
                 pd.DataFrame({"Spatial RMS": response_rms}, index=lead_labels),
                 height=240,
             )
             st.metric(
                 f"Spatial RMS · day +{lead}",
-                f"{response_rms[lead - 1]:.3f} {units}",
+                f"{response_rms[lead - 1]:.4g} {response_units}",
             )
             st.metric(
                 f"Peak |difference| · day +{lead}",
-                f"{response_peak[lead - 1]:.3f} {units}",
+                f"{response_peak[lead - 1]:.4g} {response_units}",
             )
             st.metric(
                 f"Signed mean · day +{lead}",
-                f"{response_mean[lead - 1]:+.3f} {units}",
+                f"{response_mean[lead - 1]:+.4g} {response_units}",
             )
             st.caption(
-                f"Branch · {result['scenario_name']}. Spatial RMS shows response "
-                "magnitude without positive and negative cells cancelling."
+                f"Branch · {result['scenario_name']}. Spatial RMS shows magnitude "
+                "without positive and negative cells cancelling. The signed mean can "
+                "be near zero even when local effects are substantial."
             )
 
     with impact_tab:
