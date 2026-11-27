@@ -31,6 +31,16 @@ The dashboard loads a local `india_climate_train.nc` from the repository or its 
 
 Once the dataset is loaded, the dashboard shows an observed-state grid preview. Forecast grids and lead-by-lead charts appear after **Run simulation**. Choose **Arabian Sea heat anomaly (+2.5 K)** for the preset shock, or use the custom controls; compare baseline and alternate maps on a shared color scale and review live rain, heat, and heavy-rain area charts.
 
+## Optional later-round product API
+
+The Round 1 server remains unchanged and is the only service the automatic grader needs. For a judge-facing scenario/impact API, start a separate local process:
+
+```powershell
+python .\app_product.py --port 8001
+```
+
+It exposes `POST /health` and `POST /scenario` at `http://127.0.0.1:8001`. `/scenario` accepts the same physical-unit JSON body as `/simulate` in `API_CONTRACT.md` and returns matched baseline and shocked rollouts, daily per-channel response summaries, and impact indicators. It uses only the bundled model and fixed grid coordinates; it requires no internet, external data, or additional inference packages, and it does not add work to the Round 1 `/simulate` process.
+
 Run tests and, when the kit package is installed, its API validator:
 
 ```powershell
@@ -58,8 +68,9 @@ For GPU training, upload `colab_train.py`, `india_climate_train.nc`, and `stats.
 - `training/`: training, data inspection, and baseline/model evaluation.
 - `colab_train.py`: GPU curriculum training with signed-rain, calendar-aligned rollouts and localized-shock augmentation.
 - `dashboard/`: Streamlit UI, localized shock presets, comparable forecast maps, forecast/impact time-series charts, and area-weighted rain/heat/wind screening.
+- `app_product.py`: optional offline later-round API for paired scenario and impact responses; run separately from `serve.py`.
 - `tests/`: server and dashboard-logic checks.
 - `submission/VARSHA_Two_Page_Brief.pdf`: submitted two-page model and impact brief.
-- `submission/create_brief.py`: legacy draft generator; it does not regenerate the submitted PDF.
+- `submission/create_brief.py`: reproducibly generates the submitted two-page brief from `validation_metrics.json`.
 
 VARSHA is deterministic and operates on daily, approximately 1° grid cells. It has no explicit mass/energy-conservation solver or ensemble uncertainty, and autoregressive errors can grow with lead time. Its impacts are exploratory signals, not operational forecasts.

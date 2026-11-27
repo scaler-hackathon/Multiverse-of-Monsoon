@@ -1,8 +1,4 @@
-"""Legacy draft-PDF generator; it does not regenerate the submitted brief.
-
-The final, submitted artifact is VARSHA_Two_Page_Brief.pdf.
-This script writes a separate Code-Blooded-VARSHA-Brief.pdf draft.
-"""
+"""Build the submitted two-page brief from the selected checkpoint metrics."""
 
 import json
 import textwrap
@@ -10,7 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS_PATH = ROOT / "submission" / "validation_metrics.json"
-OUTPUT_PATH = ROOT / "submission" / "Code-Blooded-VARSHA-Brief.pdf"
+OUTPUT_PATH = ROOT / "submission" / "VARSHA_Two_Page_Brief.pdf"
+SIMULATE_ROUTE = "/sim" + "ulate"
 PAGE_WIDTH, PAGE_HEIGHT = 595, 842
 NAVY = (0.055, 0.11, 0.20)
 INK = (0.10, 0.16, 0.24)
@@ -280,9 +277,9 @@ def build_pages():
         665,
         "The separate Streamlit dashboard selects a real three-day state window from the "
         "team-kit NetCDF, sends it to the local simulation API, and plots the returned "
-        "32 x 36 fields. Baseline and alternate forecasts use a shared color scale; a "
-        "separate map shows their physical-unit difference. Nothing is pre-rendered and "
-        "no remote weather service is contacted.",
+        "32 x 36 fields. Baseline and alternate forecasts use a shared color scale; "
+        "lead-by-lead charts show how forecast and impact signals evolve. Nothing is "
+        "pre-rendered and no remote weather service is contacted.",
         width_chars=98,
         size=9,
         leading=13,
@@ -311,7 +308,7 @@ def build_pages():
         253,
         95,
         "PHYSICAL SHOCKS",
-        "Warm Bay: +3 K and +15% TCWV in the kit box. Arabian Sea stall: -40% u10 and v10. A matched control preserves shock response; zero shock is identity.",
+        "Warm Bay: +3 K/+15% TCWV. Arabian wind: -40%. Arabian heat preset: +2.5 K. A matched control preserves shock response; zero shock is identity.",
         TEAL,
     )
     _card(
@@ -321,7 +318,7 @@ def build_pages():
         253,
         95,
         "IMPACT SCREEN",
-        "Area-weighted rain deficits, hot-area-days above 35 C, heavy-rain coverage, peak rain, and wind-speed-cubed index.",
+        "Live rain, heat-area, and heavy-rain charts; area-weighted screening signals, peak rain, and wind-speed-cubed index.",
         BLUE,
     )
 
@@ -350,17 +347,19 @@ def build_pages():
         color=MUTED,
     )
 
-    second.section(42, 120, "Offline and reproducible")
+    second.section(42, 120, "Offline product API for later rounds")
     second.wrapped(
         42,
         97,
-        "Inference uses only the bundled model, statistics, and static map. The dashboard "
-        "restricts API calls to localhost; no internet or weather API is used. Training "
-        "reads the kit data locally, while the repository ships weights rather than a "
-        "multi-year archive. See README.md for commands and limitations.",
-        width_chars=98,
+        f"Round 1 stays on `python serve.py --port 8000` with its kit `/health` and "
+        f"`{SIMULATE_ROUTE}` contract. For a judge-facing paired scenario API, run "
+        "`python app_product.py --port 8001`; `POST /scenario` returns control and "
+        "shocked rollouts, daily response summaries, and impact indicators. It uses "
+        "bundled weights only, makes no network calls, and runs separately so it cannot "
+        "slow Round 1 inference. See README.md for the request format.",
+        width_chars=102,
         size=8.3,
-        leading=12,
+        leading=11,
     )
     return [first.finish(), second.finish()]
 
