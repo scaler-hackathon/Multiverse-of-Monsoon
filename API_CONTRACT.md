@@ -25,6 +25,7 @@ Normalisation statistics (mean, std per channel) ship in `stats.json` for your o
 ```
 {"init_states": [3,6,32,36], "doy_sincos": [sin, cos], "steps": 10, "perturbation": null | [6,32,36]}
 ```
+`steps` must be an integer from 1 through 10, inclusive.
 `init_states` are 3 consecutive days, oldest first; the forecast starts the day after the last one. `doy_sincos = [sin(2 pi doy/365), cos(2 pi doy/365)]` for the LAST input day. `perturbation` is a delta in physical units added to `init_states[-1]` before you simulate (null = none).
 Response: `{"rollout": [steps,6,32,36], "inference_ms": float}`; `rollout[k]` is day k+1 after the last input day.
 

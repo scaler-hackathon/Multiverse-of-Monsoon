@@ -34,6 +34,7 @@ class InferenceEdgeCaseTests(unittest.TestCase):
             lambda: serve.simulate(np.zeros((1, 6, 32, 36)), self.phase, 1, None),
             lambda: serve.simulate(self.initial, (0.0, 0.0), 1, None),
             lambda: serve.simulate(self.initial, self.phase, True, None),
+            lambda: serve.simulate(self.initial, self.phase, 11, None),
             lambda: serve.simulate(
                 np.full_like(self.initial, np.nan), self.phase, 1, None
             ),

@@ -6,6 +6,7 @@ import sys
 import tempfile
 
 import numpy as np
+import pandas as pd
 import requests
 import streamlit as st
 import xarray as xr
@@ -19,6 +20,7 @@ from dashboard.logic import (
     SCENARIOS,
     grid_svg,
     impact_summary,
+    impact_timeseries,
     make_perturbation,
     grid_cell_area_weights,
     response_diagnostics,
@@ -134,6 +136,14 @@ st.markdown(
     "Explore the **baseline forecast**, branch a **localized atmospheric shock**, "
     "and compare both worlds using live model output."
 )
+with st.container(border=True):
+    guide_columns = st.columns(3)
+    guide_columns[0].markdown("**1 · Choose the starting weather**")
+    guide_columns[0].caption("Select a day from the NetCDF or upload the kit dataset.")
+    guide_columns[1].markdown("**2 · Choose a scenario**")
+    guide_columns[1].caption("Compare the control with a localized climate shock.")
+    guide_columns[2].markdown("**3 · Run and inspect**")
+    guide_columns[2].caption("Maps show spatial patterns; charts show how signals evolve.")
 
 with st.sidebar:
     st.header("Simulation setup")
@@ -212,6 +222,11 @@ if upload is not None or DATA_PATH.is_file():
         )
         custom_options["custom_radius"] = st.sidebar.slider(
             "Shock radius (degrees)", 0.25, 15.0, 3.0
+        )
+    elif scenario == SCENARIOS[5]:
+        st.sidebar.caption(
+            "Adds +2.5 K to temperature within 3° of 15°N, 70°E. "
+            "The same model runs the control and shocked branches."
         )
 
     if upload is not None:
@@ -335,6 +350,16 @@ if result is not None:
         result["latitudes"],
         result["longitudes"],
     )
+    baseline_series = impact_timeseries(
+        baseline, result["latitudes"], result["longitudes"]
+    )
+    scenario_series = impact_timeseries(
+        forecast, result["latitudes"], result["longitudes"]
+    )
+    lead_labels = pd.Index(
+        [f"Day +{day}" for day in range(1, len(forecast) + 1)],
+        name="Forecast lead",
+    )
     field_tab, response_tab, impact_tab, diagnostics_tab = st.tabs(
         ("Forecast field", "Counterfactual response", "Impact signals", "Run details")
     )
@@ -412,6 +437,19 @@ if result is not None:
             "One cell per kit grid point · 32 × 36 grid · colors are scaled to this field. "
             "Grid cells are not administrative boundaries."
         )
+        st.subheader("Forecast evolution")
+        evolution = pd.DataFrame(
+            {
+                "Timeline Prime": baseline[:, channel_index].mean(axis=(1, 2)),
+                "Selected branch": forecast[:, channel_index].mean(axis=(1, 2)),
+            },
+            index=lead_labels,
+        )
+        st.line_chart(evolution, height=280)
+        st.caption(
+            f"Daily grid-mean {selected_label.lower()} ({units}); use the maps above "
+            "to see where the changes occur."
+        )
 
     with response_tab:
         if result["scenario_name"] == SCENARIOS[0]:
@@ -441,7 +479,10 @@ if result is not None:
             )
         with details_column:
             st.subheader("Spatial response through time")
-            st.line_chart({"RMS response": response_rms})
+            st.line_chart(
+                pd.DataFrame({"Spatial RMS": response_rms}, index=lead_labels),
+                height=240,
+            )
             st.metric(
                 f"Spatial RMS · day +{lead}",
                 f"{response_rms[lead - 1]:.3f} {units}",
@@ -501,6 +542,46 @@ if result is not None:
         st.info(
             "These indicators omit soil moisture, crop calendars, river routing, exposure "
             "and turbine calibration. Use them for scenario comparison, not operational decisions."
+        )
+        rain_column, heat_column = st.columns(2)
+        with rain_column:
+            st.markdown("#### Central India · daily rainfall")
+            rain_chart = pd.DataFrame(
+                {
+                    "Timeline Prime": baseline_series["crop_rain_mm_day"],
+                    "Selected branch": scenario_series["crop_rain_mm_day"],
+                    "4 mm/day reference": np.full(len(forecast), 4.0),
+                },
+                index=lead_labels,
+            )
+            st.line_chart(rain_chart, height=280)
+            st.caption(
+                "Area-weighted regional mean and a screening reference—not a crop-yield forecast."
+            )
+        with heat_column:
+            st.markdown("#### National heat exposure · area > 35°C")
+            heat_chart = pd.DataFrame(
+                {
+                    "Timeline Prime": baseline_series["hot_area_pct"],
+                    "Selected branch": scenario_series["hot_area_pct"],
+                },
+                index=lead_labels,
+            )
+            st.line_chart(heat_chart, height=280)
+            st.caption(
+                "Share of the grid above 35°C each day; a screening proxy, not an official heatwave warning."
+            )
+        st.markdown("#### Heavy-rain exposure · area ≥ 10 mm/day")
+        rain_area_chart = pd.DataFrame(
+            {
+                "Timeline Prime": baseline_series["heavy_rain_area_pct"],
+                "Selected branch": scenario_series["heavy_rain_area_pct"],
+            },
+            index=lead_labels,
+        )
+        st.line_chart(rain_area_chart, height=240)
+        st.caption(
+            "Latitude-weighted grid-area percentage from each model rollout."
         )
 
     with diagnostics_tab:

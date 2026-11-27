@@ -1,3 +1,9 @@
+"""Legacy draft-PDF generator; it does not regenerate the submitted brief.
+
+The final, submitted artifact is VARSHA_Two_Page_Brief.pdf.
+This script writes a separate Code-Blooded-VARSHA-Brief.pdf draft.
+"""
+
 import json
 import textwrap
 from pathlib import Path

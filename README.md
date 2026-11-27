@@ -29,7 +29,7 @@ python -m streamlit run .\dashboard\app.py
 
 The dashboard loads a local `india_climate_train.nc` from the repository or its parent directory, or accepts an upload. To use another local file, set `VARSHA_DATA` before launching Streamlit. The NetCDF is not included in the submission; obtain it from the official [yug-monsoon-kit v1.0.0 release](https://github.com/OfficialAbhinavSingh/yug-monsoon-kit/releases/tag/v1.0.0).
 
-Once the dataset is loaded, the dashboard shows an observed-state grid preview. Forecast grids appear after **Run simulation**; choose a counterfactual scenario to see baseline and alternate maps with their shared color scale.
+Once the dataset is loaded, the dashboard shows an observed-state grid preview. Forecast grids and lead-by-lead charts appear after **Run simulation**. Choose **Arabian Sea heat anomaly (+2.5 K)** for the preset shock, or use the custom controls; compare baseline and alternate maps on a shared color scale and review live rain, heat, and heavy-rain area charts.
 
 Run tests and, when the kit package is installed, its API validator:
 
@@ -57,8 +57,9 @@ For GPU training, upload `colab_train.py`, `india_climate_train.nc`, and `stats.
 - `serve.py`, `varsha_weights.pt`, `static_norm.npy`, and `stats.json`: offline CPU inference.
 - `training/`: training, data inspection, and baseline/model evaluation.
 - `colab_train.py`: GPU curriculum training with signed-rain, calendar-aligned rollouts and localized-shock augmentation.
-- `dashboard/`: Streamlit UI, local shock generation, comparable forecast maps, and area-weighted rain/heat/wind impact screening.
+- `dashboard/`: Streamlit UI, localized shock presets, comparable forecast maps, forecast/impact time-series charts, and area-weighted rain/heat/wind screening.
 - `tests/`: server and dashboard-logic checks.
-- `submission/Code-Blooded-VARSHA-Brief.pdf`: two-page model and impact brief.
+- `submission/VARSHA_Two_Page_Brief.pdf`: submitted two-page model and impact brief.
+- `submission/create_brief.py`: legacy draft generator; it does not regenerate the submitted PDF.
 
 VARSHA is deterministic and operates on daily, approximately 1° grid cells. It has no explicit mass/energy-conservation solver or ensemble uncertainty, and autoregressive errors can grow with lead time. Its impacts are exploratory signals, not operational forecasts.

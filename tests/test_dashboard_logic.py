@@ -8,6 +8,7 @@ from dashboard.logic import (
     grid_cell_area_weights,
     grid_svg,
     impact_summary,
+    impact_timeseries,
     make_perturbation,
     response_diagnostics,
     uploaded_dataset_key,
@@ -68,6 +69,20 @@ class DashboardLogicTests(unittest.TestCase):
         self.assertEqual(np.count_nonzero(perturbation[2]), 120)
         self.assertTrue(np.allclose(perturbation[2][perturbation[2] != 0], 0.8))
         self.assertTrue(np.allclose(perturbation[3][perturbation[3] != 0], -1.2))
+
+    def test_arabian_sea_heat_preset_is_local_and_uses_plus_2_5k(self):
+        perturbation = make_perturbation(
+            SCENARIOS[5], self.states, self.latitudes, self.longitudes
+        )
+        distance = np.hypot(
+            self.latitudes[:, None] - 15.0,
+            (self.longitudes[None, :] - 70.0) * np.cos(np.deg2rad(15.0)),
+        )
+        expected_mask = distance <= 3.0
+        np.testing.assert_array_equal(perturbation[0], expected_mask * 2.5)
+        self.assertGreater(int(expected_mask.sum()), 0)
+        for channel in range(1, 6):
+            self.assertEqual(np.count_nonzero(perturbation[channel]), 0)
 
     def test_invalid_inputs_and_shocks_fail_loudly(self):
         with self.assertRaises(ValueError):
@@ -143,6 +158,26 @@ class DashboardLogicTests(unittest.TestCase):
         self.assertAlmostEqual(
             impacts["hot_area_day_fraction"], float(expected_hot_area), places=6
         )
+
+    def test_impact_timeseries_is_daily_and_uses_live_rollout_fields(self):
+        rollout = np.repeat(self.states[-1][None], 3, axis=0)
+        rollout[:, 0, 0, :] = 310.0
+        rollout[:, 1, 0, :] = 12.0
+
+        series = impact_timeseries(
+            rollout, self.latitudes, self.longitudes
+        )
+
+        self.assertEqual(
+            set(series),
+            {"crop_rain_mm_day", "heavy_rain_area_pct", "hot_area_pct"},
+        )
+        for values in series.values():
+            self.assertEqual(values.shape, (3,))
+            self.assertTrue(np.isfinite(values).all())
+        np.testing.assert_allclose(series["crop_rain_mm_day"], 5.0)
+        self.assertGreater(series["heavy_rain_area_pct"][0], 0.0)
+        self.assertGreater(series["hot_area_pct"][0], 0.0)
 
     def test_shared_map_limits_preserve_colors_and_reject_invalid_bounds(self):
         first = np.zeros((32, 36), dtype=np.float32)

@@ -14,6 +14,7 @@ LEGACY_RAIN_MODE = "softplus_increment"
 SIGNED_RAIN_MODE = "signed_increment"
 
 ROOT = Path(__file__).resolve().parent
+MAX_STEPS = 10
 torch.set_num_threads(min(4, torch.get_num_threads()))
 
 # --- 1. Model Architecture (Exact Match to Trained Colab Checkpoint) ---
@@ -175,8 +176,8 @@ def simulate(init_states: np.ndarray, doy_sincos, steps: int, perturbation) -> n
     """
     baseline_states = _arr(init_states, (3, 6, 32, 36), "init_states").copy()
     states = baseline_states.copy()
-    if isinstance(steps, bool) or not isinstance(steps, (int, np.integer)) or not 1 <= steps <= 30:
-        raise ValueError("steps must be an integer between 1 and 30.")
+    if isinstance(steps, bool) or not isinstance(steps, (int, np.integer)) or not 1 <= steps <= MAX_STEPS:
+        raise ValueError(f"steps must be an integer between 1 and {MAX_STEPS}.")
     phase = np.asarray(doy_sincos, dtype=np.float64)
     if phase.shape != (2,) or not np.isfinite(phase).all():
         raise ValueError("doy_sincos must contain two finite numbers.")
@@ -331,8 +332,11 @@ async def simulate_endpoint(request: Request):
     if missing:
         raise HTTPException(status_code=422, detail=f"Missing required fields: {', '.join(missing)}.")
     steps = body["steps"]
-    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= 30:
-        raise HTTPException(status_code=422, detail="steps must be an integer between 1 and 30.")
+    if isinstance(steps, bool) or not isinstance(steps, int) or not 1 <= steps <= MAX_STEPS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"steps must be an integer between 1 and {MAX_STEPS}.",
+        )
     try:
         init = _arr(body["init_states"], (3, 6, 32, 36), "init_states")
         phase = np.asarray(body["doy_sincos"], dtype=np.float64)

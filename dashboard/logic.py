@@ -23,6 +23,7 @@ SCENARIOS = (
     "Weaker Arabian Sea winds (-40%)",
     "Zero perturbation (identity check)",
     "Custom localized shock",
+    "Arabian Sea heat anomaly (+2.5 K)",
 )
 
 
@@ -139,11 +140,72 @@ def make_perturbation(
         if not mask.any():
             raise ValueError("Custom shock does not intersect the grid; move its center or enlarge the radius.")
         perturbation[CHANNELS[custom_channel], mask] = float(custom_delta)
+    elif scenario == SCENARIOS[5]:
+        distance = np.hypot(
+            lats[:, None] - 15.0,
+            (lons[None, :] - 70.0) * math.cos(math.radians(15.0)),
+        )
+        mask = distance <= 3.0
+        if not mask.any():
+            raise ValueError("The grid does not contain the Arabian Sea heat-shock area.")
+        perturbation[0, mask] = 2.5
     else:
         raise ValueError(f"Unknown scenario: {scenario}")
     if not np.isfinite(perturbation).all():
         raise ValueError("Perturbation calculation produced a non-finite value.")
     return perturbation
+
+
+def impact_timeseries(rollout, latitudes, longitudes):
+    forecast = np.asarray(rollout, dtype=np.float64)
+    lats = np.asarray(latitudes, dtype=np.float64)
+    lons = np.asarray(longitudes, dtype=np.float64)
+    if (
+        forecast.ndim != 4
+        or forecast.shape[0] < 1
+        or forecast.shape[1:] != (6, GRID_HEIGHT, GRID_WIDTH)
+        or lats.shape != (GRID_HEIGHT,)
+        or lons.shape != (GRID_WIDTH,)
+        or not np.isfinite(lats).all()
+        or not np.isfinite(lons).all()
+        or np.any(np.abs(lats) > 90.0)
+    ):
+        raise ValueError("Impact time series received an invalid rollout or grid.")
+    if not np.isfinite(forecast).all():
+        raise ValueError("Impact time series requires finite physical-unit weather fields.")
+
+    weights = grid_cell_area_weights(lats)
+    total_area = float(weights.sum())
+    central = (
+        (lats[:, None] >= 16.0)
+        & (lats[:, None] <= 23.0)
+        & (lons[None, :] >= 73.0)
+        & (lons[None, :] <= 82.0)
+    )
+    if not central.any():
+        central = np.broadcast_to(lats[:, None] >= 8.0, (GRID_HEIGHT, GRID_WIDTH))
+    if not central.any():
+        central = np.ones((GRID_HEIGHT, GRID_WIDTH), dtype=bool)
+
+    rain = forecast[:, 1]
+    return {
+        "crop_rain_mm_day": np.average(
+            rain[:, central], axis=1, weights=weights[central]
+        ),
+        "heavy_rain_area_pct": (
+            100.0
+            * np.sum((rain >= 10.0) * weights[None, :, :], axis=(1, 2))
+            / total_area
+        ),
+        "hot_area_pct": (
+            100.0
+            * np.sum(
+                (forecast[:, 0] > 308.15) * weights[None, :, :],
+                axis=(1, 2),
+            )
+            / total_area
+        ),
+    }
 
 
 def impact_summary(rollout, init_state, latitudes, longitudes):
